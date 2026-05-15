@@ -1,10 +1,16 @@
 package com.cinex.config;
 
-import io.jsonwebtoken.*;
-import io.jsonwebtoken.security.Keys;
-import org.springframework.stereotype.Component;
-import javax.crypto.SecretKey;
 import java.util.Date;
+
+import javax.crypto.SecretKey;
+
+import org.springframework.stereotype.Component;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 
 @Component
 public class JwtUtil {
@@ -38,8 +44,37 @@ public class JwtUtil {
         try {
             getClaims(token);
             return true;
+        } catch (ExpiredJwtException e) {
+            return false;
         } catch (JwtException e) {
             return false;
+        }
+    }
+
+    public boolean isTokenValidOrExpired(String token) {
+        try {
+            getClaims(token);
+            return true;
+        } catch (ExpiredJwtException e) {
+            return true;
+        } catch (JwtException e) {
+            return false;
+        }
+    }
+
+    public String extractEmailFromAnyToken(String token) {
+        return getClaimsAllowExpired(token).getSubject();
+    }
+
+    public String extractRoleFromAnyToken(String token) {
+        return getClaimsAllowExpired(token).get("role", String.class);
+    }
+
+    private Claims getClaimsAllowExpired(String token) {
+        try {
+            return getClaims(token);
+        } catch (ExpiredJwtException e) {
+            return e.getClaims();
         }
     }
 
