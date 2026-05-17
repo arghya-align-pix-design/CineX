@@ -1,18 +1,19 @@
 package com.cinex.service;
 
-import com.cinex.config.JwtUtil;
-import com.cinex.entity.User;
-import com.cinex.repo.UserRepo;
-import com.cinex.service.TotpService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import com.cinex.config.JwtUtil;
+import com.cinex.entity.User;
+import com.cinex.repository.UserRepository;
+
+import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
 public class AdminService {
 
-    private final UserRepo userRepository;
+    private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final TotpService totpService;
     private final JwtUtil jwtUtil;

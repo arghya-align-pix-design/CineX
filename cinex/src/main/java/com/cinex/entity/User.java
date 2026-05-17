@@ -11,7 +11,7 @@ import jakarta.persistence.Table;
 import lombok.Data;
 
 @Entity
-@Table(name = "users")
+@Table(name = "customers")
 @Data
 public class User {
 
@@ -27,6 +27,15 @@ public class User {
 
     @Enumerated(EnumType.STRING)
     private Role role;
+
+    @Column
+    private String totpSecret;
+
+    @Column(nullable=false)
+    private boolean isApproved=true; //default for customers
+
+    @Column(nullable=false)
+    private boolean firstLogin =true; //default unless user changes password
 
     public enum Role {
         CONSUMER, VENDOR, ADMIN
