@@ -1,5 +1,11 @@
 package com.cinex.entity;
 
+import org.hibernate.annotations.Type;
+
+import com.cinex.dto.SeatGridConfig;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
+import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -12,6 +18,9 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.Data;
+
+
+
 
 @Entity
 @Table(name = "seatsections")
@@ -29,6 +38,10 @@ public class Section {
     @Column(nullable = false)
     private SeatType seatType;
 
+    @Type(JsonBinaryType.class)
+    @Column(columnDefinition = "jsonb")
+    private SeatGridConfig seatGrid;
+
     @Column(nullable = false)
     private int rows;
 
@@ -41,6 +54,7 @@ public class Section {
     @Column(nullable = false)
     private boolean isActive = true;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "theatre_id", nullable = false)
     private Theatre theatre;
