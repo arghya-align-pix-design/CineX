@@ -61,7 +61,7 @@ public class TheatreController {
         return sectionService.getSections(theatreId);
     }
 
-    @GetMapping("{theatreId}/layout")
+    @GetMapping("/{theatreId}/layout")
     public TheatreResponse getLayout(@PathVariable Long theatreId) {
         Theatre theatre = theatreService.getLayout(theatreId);
         return theatreMapper.toResponse(theatre);
