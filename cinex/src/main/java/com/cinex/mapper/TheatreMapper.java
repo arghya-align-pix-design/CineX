@@ -14,5 +14,6 @@ public interface TheatreMapper {
     TheatreResponse toResponse(Theatre theatre);
 
     @Mapping(target = "seatType", expression = "java(section.getSeatType().name())")
+    @Mapping(target = "active", source = "active")
     SectionResponse toSectionResponse(Section section);
 }
