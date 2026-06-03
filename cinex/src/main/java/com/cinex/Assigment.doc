@@ -1,0 +1,37 @@
+1.	We are looking for a movie theatre via our location in gps, so we use 
+State, district, Latitude, longitude.
+
+
+Method 1:-  The @Repository Class
+@Repository
+Public class TheatreRepositoryCustom{
+	@PersistenceContext
+	private EntityManager entityMang;
+
+    public List<Theatre> findTheatresByGps(
+        String state, String district,
+        double lat, double lon
+    ){
+        String jpql= "Select * from Theatre t WHERE t.state= :state AND 
+           t.district= :district AND t.lat=:lat AND t.lon=:lon";
+           return entityMang.createQuery(jpql, Theatre.class)
+           .setParameter("state",state)
+           .setParameter("district",district)
+           .setParameter("lat",lat)
+           .setParameter("lon",lon)
+           .getResultList();
+    }
+}
+
+Method 2:-Spring Data JPA Method Name
+
+Public class TheatreRepository{
+    List<Theatre> findByStateAndDistrictAndLatitudeAndLongitude(String state, String district, double latitude, double longitude);
+}
+
+Method 3:- JPQL (@Query)
+@Query( "Select */t from Theatre t WHERE t.state=?1 AND t.district=?2 AND t.latitude=?3 AND t.longitude=?4" )
+Public class TheatreRepository{
+    List<Theatre> searchTheaters(String state, String district, double lat, double lon);
+}
+

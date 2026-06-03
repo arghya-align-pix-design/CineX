@@ -37,7 +37,9 @@ public class SectionService {
         grid.setRows(request.getRows());
         grid.setColumns(request.getCols());
         grid.setSeatCodes(generateSeatCodes(request.getRows(), request.getCols()));
+        grid.setDamagedSeats(new ArrayList<>());
         grid.setUnavailableSeats(new ArrayList<>());
+        grid.setAisles(new ArrayList<>());
 
         Section section = new Section();
         section.setName(request.getName());
