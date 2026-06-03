@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react'
+import { useDarkMode } from './useDarkMode'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
@@ -17,7 +18,7 @@ function SeatCell({
   rowLabel: string; colIdx: number
 }) {
   const cfg = SEAT_CONFIG[seat.type]
-  const dark = isDarkMode()
+  const dark = useDarkMode()
   const bg = dark ? cfg.darkBg : cfg.bg
   const border = dark ? cfg.darkBorder : cfg.border
   const h = cfg.height
