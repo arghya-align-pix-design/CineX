@@ -1,23 +1,17 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import type { LayoutItem, SeatType, RowItem, SectionItem } from './constants'
+import type { LayoutItem, SeatType, Zone } from './constants'
 import {
-  mkSeat, mkRow, mkSection, mkRowWithCodes,
-  createSeedLayout, SEAT_TYPES, ROW_LABEL,
+  mkSeat, mkRow, mkRowWithCodes,
+  createSeedLayout, ROW_LABEL,
+  DEFAULT_MULTIPLIER, SEAT_CONFIG
 } from './constants'
-
-// ── Helper: count rows before a given layout index (= global row index at that position) ──
-function globalRowsBefore(layout: LayoutItem[], beforeIdx: number): number {
-  let count = 0
-  for (let i = 0; i < beforeIdx; i++) {
-    if (layout[i].kind === 'row') count++
-  }
-  return count
-}
 
 export function useTheatreState() {
   const seed = useRef(createSeedLayout())
   const [layout,     setLayout]     = useState<LayoutItem[]>(seed.current.layout)
-  const [aisles,     setAisles]     = useState<Set<number>>(seed.current.aisles)
+  const [colAisles,  setColAisles]  = useState<Set<number>>(seed.current.aisles)
+  const [rowAisles,  setRowAisles]  = useState<Set<number>>(new Set())
+  const [zones,      setZones]      = useState<Zone[]>(seed.current.zones)
   const [activeType, setActiveType] = useState<SeatType>('SILVER')
   const [selected,   setSelected]   = useState<Set<number>>(new Set())
   const [mode,       setMode]       = useState<'edit' | 'preview'>('edit')
@@ -30,16 +24,23 @@ export function useTheatreState() {
   const [, forceUpdate] = useState(0)
 
   const saveHistory = useCallback(() => {
-    const s = JSON.stringify({ layout, aisles: [...aisles] })
+    const s = JSON.stringify({
+      layout,
+      colAisles: [...colAisles],
+      rowAisles: [...rowAisles],
+      zones
+    })
     historyRef.current = [...historyRef.current.slice(-39), s]
-  }, [layout, aisles])
+  }, [layout, colAisles, rowAisles, zones])
 
   const undo = useCallback(() => {
     const h = historyRef.current
     if (!h.length) return
     const snap = JSON.parse(h[h.length - 1])
     setLayout(snap.layout)
-    setAisles(new Set(snap.aisles))
+    setColAisles(new Set(snap.colAisles))
+    setRowAisles(new Set(snap.rowAisles))
+    setZones(snap.zones)
     setSelected(new Set())
     historyRef.current = h.slice(0, -1)
     forceUpdate(n => n + 1)
@@ -59,10 +60,8 @@ export function useTheatreState() {
     setPvSelected(new Set())
     const allSeats: number[] = []
     for (const item of layout) {
-      if (item.kind === 'row') {
-        for (const s of item.seats) {
-          if (!s.removed) allSeats.push(s.id)
-        }
+      for (const s of item.seats) {
+        if (!s.removed) allSeats.push(s.id)
       }
     }
     const count    = Math.round(allSeats.length * 0.27)
@@ -73,67 +72,48 @@ export function useTheatreState() {
 
   const enterEdit = useCallback(() => setMode('edit'), [])
 
+  // ── Sequentially Relabel Rows ──
+  const relabelRows = useCallback(() => {
+    saveHistory()
+    setLayout(l => l.map((row, ri) => {
+      const newLabel = ROW_LABEL(ri)
+      const seats = row.seats.map((seat, ci) => ({
+        ...seat,
+        code: `${newLabel}${ci + 1}`
+      }))
+      return { ...row, rowLabel: newLabel, seats }
+    }))
+  }, [saveHistory])
+
   // ── Mutations ──
-
-  const addSection = useCallback(() => {
+  const addRow = useCallback((zoneType: SeatType = activeType) => {
     saveHistory()
-    const used = new Set(
-      layout.filter((i): i is SectionItem => i.kind === 'section').map(s => s.seatType)
-    )
-    const type = SEAT_TYPES.find(t => !used.has(t)) ?? 'SILVER'
-    setLayout(l => [...l, mkSection(type)])
-  }, [layout, saveHistory])
-
-  const addRow = useCallback((sectionId?: number) => {
-    saveHistory()
-    const rows = layout.filter((i): i is RowItem => i.kind === 'row')
-    const n    = rows.length > 0 ? rows[rows.length - 1].seats.length : 12
-
-    setLayout(l => {
-      if (sectionId !== undefined) {
-        const secIdx = l.findIndex(i => i.kind === 'section' && i.id === sectionId)
-        if (secIdx === -1) return l
-        const sec = l[secIdx] as SectionItem
-        let insertIdx = secIdx + 1
-        while (insertIdx < l.length && l[insertIdx].kind === 'row') insertIdx++
-        const globalIdx = globalRowsBefore(l, insertIdx)
-        const newRow    = mkRowWithCodes(sec.seatType, n, globalIdx)
-        return [...l.slice(0, insertIdx), newRow, ...l.slice(insertIdx)]
-      }
-      // Append to end
-      const sections  = l.filter((i): i is SectionItem => i.kind === 'section')
-      const type      = sections.length > 0 ? sections[sections.length - 1].seatType : activeType
-      const globalIdx = globalRowsBefore(l, l.length)
-      return [...l, mkRowWithCodes(type, n, globalIdx)]
-    })
+    const cols = layout.length > 0 ? layout[layout.length - 1].seats.length : 12
+    const globalIdx = layout.length
+    const newRow = mkRowWithCodes(zoneType, cols, globalIdx)
+    setLayout(l => [...l, newRow])
   }, [layout, activeType, saveHistory])
 
   const copyLastRow = useCallback(() => {
+    if (layout.length === 0) return
     saveHistory()
     setLayout(l => {
-      const lastRowIdx = l
-        .map((item, i) => (item.kind === 'row' ? i : -1))
-        .filter(i => i >= 0)
-        .pop()
-      if (lastRowIdx === undefined) return l
-
-      const src        = l[lastRowIdx] as RowItem
-      const newGlobal  = globalRowsBefore(l, lastRowIdx + 1)
-      const label      = ROW_LABEL(newGlobal)
-
-      // Copy seats with updated codes for new row label; preserve removed flag
-      const seats = src.seats.map((s, ci) =>
-        ({ ...mkSeat(s.type, `${label}${ci + 1}`), removed: s.removed })
-      )
-      const newRow = mkRow(seats)
-      return [...l.slice(0, lastRowIdx + 1), newRow, ...l.slice(lastRowIdx + 1)]
+      const src = l[l.length - 1]
+      const newGlobal = l.length
+      const label = ROW_LABEL(newGlobal)
+      const seats = src.seats.map((s, ci) => ({
+        ...mkSeat(s.type, `${label}${ci + 1}`),
+        removed: s.removed
+      }))
+      const newRow = mkRow(label, src.zone, seats)
+      return [...l, newRow]
     })
-  }, [saveHistory])
+  }, [layout, saveHistory])
 
   const removeRow = useCallback((id: number) => {
     saveHistory()
     setLayout(l => {
-      const row = l.find(i => i.kind === 'row' && i.id === id) as RowItem | undefined
+      const row = l.find(i => i.id === id)
       if (row) {
         setSelected(prev => {
           const next = new Set(prev)
@@ -141,44 +121,37 @@ export function useTheatreState() {
           return next
         })
       }
-      return l.filter(i => !(i.kind === 'row' && i.id === id))
+      return l.filter(i => i.id !== id)
     })
   }, [saveHistory])
 
   const addColumn = useCallback(() => {
     saveHistory()
-    setLayout(l => {
-      let rowIdx = 0
-      return l.map(item => {
-        if (item.kind !== 'row') return item
-        const firstType = item.seats.find(s => !s.removed)?.type ?? activeType
-        const label     = ROW_LABEL(rowIdx)
-        const newCode   = `${label}${item.seats.length + 1}`
-        rowIdx++
-        // Guard: max 25 columns
-        if (item.seats.length >= 25) return item
-        return { ...item, seats: [...item.seats, mkSeat(firstType, newCode)] }
-      })
-    })
+    setLayout(l => l.map(row => {
+      const firstType = row.seats.find(s => !s.removed)?.type ?? activeType
+      const newCode = `${row.rowLabel}${row.seats.length + 1}`
+      if (row.seats.length >= 25) return row // Guard: max 25 cols
+      return { ...row, seats: [...row.seats, mkSeat(firstType, newCode)] }
+    }))
   }, [activeType, saveHistory])
 
   const removeColumn = useCallback(() => {
     saveHistory()
-    setLayout(l => l.map(item => {
-      if (item.kind !== 'row' || item.seats.length === 0) return item
-      const dropped = item.seats[item.seats.length - 1]
+    setLayout(l => l.map(row => {
+      if (row.seats.length === 0) return row
+      const dropped = row.seats[row.seats.length - 1]
       setSelected(prev => { const n = new Set(prev); n.delete(dropped.id); return n })
-      return { ...item, seats: item.seats.slice(0, -1) }
+      return { ...row, seats: row.seats.slice(0, -1) }
     }))
   }, [saveHistory])
 
   const removeSeat = useCallback((seatId: number) => {
     saveHistory()
     setSelected(prev => { const n = new Set(prev); n.delete(seatId); return n })
-    setLayout(l => l.map(item => {
-      if (item.kind !== 'row') return item
-      return { ...item, seats: item.seats.map(s => s.id === seatId ? { ...s, removed: true } : s) }
-    }))
+    setLayout(l => l.map(row => ({
+      ...row,
+      seats: row.seats.map(s => s.id === seatId ? { ...s, removed: true } : s)
+    })))
   }, [saveHistory])
 
   const toggleSelected = useCallback((seatId: number) => {
@@ -190,7 +163,7 @@ export function useTheatreState() {
   }, [])
 
   const selectRow = useCallback((rowId: number) => {
-    const row = layout.find(i => i.kind === 'row' && i.id === rowId) as RowItem | undefined
+    const row = layout.find(i => i.id === rowId)
     if (!row) return
     const nonRemoved  = row.seats.filter(s => !s.removed).map(s => s.id)
     const allSelected = nonRemoved.every(id => selected.has(id))
@@ -203,41 +176,77 @@ export function useTheatreState() {
 
   const deleteSelected = useCallback(() => {
     saveHistory()
-    setLayout(l => l.map(item => {
-      if (item.kind !== 'row') return item
-      return { ...item, seats: item.seats.map(s => selected.has(s.id) ? { ...s, removed: true } : s) }
-    }))
+    setLayout(l => l.map(row => ({
+      ...row,
+      seats: row.seats.map(s => selected.has(s.id) ? { ...s, removed: true } : s)
+    })))
     setSelected(new Set())
   }, [selected, saveHistory])
 
   const assignType = useCallback((type: SeatType) => {
     if (selected.size === 0) return
     saveHistory()
-    setLayout(l => l.map(item => {
-      if (item.kind !== 'row') return item
-      return { ...item, seats: item.seats.map(s => selected.has(s.id) ? { ...s, type } : s) }
-    }))
+    setLayout(l => l.map(row => ({
+      ...row,
+      seats: row.seats.map(s => selected.has(s.id) ? { ...s, type } : s)
+    })))
   }, [selected, saveHistory])
 
   const toggleAisle = useCallback((colIdx: number) => {
     saveHistory()
-    setAisles(prev => {
+    setColAisles(prev => {
       const n = new Set(prev)
       n.has(colIdx) ? n.delete(colIdx) : n.add(colIdx)
       return n
     })
   }, [saveHistory])
 
-  const updateSection = useCallback((id: number, field: string, value: string | number) => {
-    setLayout(l => l.map(item => {
-      if (item.kind !== 'section' || item.id !== id) return item
-      return { ...item, [field]: value }
-    }))
-  }, [])
-
-  const removeSection = useCallback((id: number) => {
+  const toggleRowAisle = useCallback((rowIdx: number) => {
     saveHistory()
-    setLayout(l => l.filter(i => !(i.kind === 'section' && i.id === id)))
+    setRowAisles(prev => {
+      const n = new Set(prev)
+      n.has(rowIdx) ? n.delete(rowIdx) : n.add(rowIdx)
+      return n
+    })
+  }, [saveHistory])
+
+  const updateZoneMultiplier = useCallback((zoneType: string, newMultiplier: number) => {
+    saveHistory()
+    setZones(prev => prev.map(z => z.type === zoneType ? { ...z, priceMultiplier: newMultiplier } : z))
+  }, [saveHistory])
+
+  const updateZoneName = useCallback((zoneType: string, newName: string) => {
+    saveHistory()
+    setZones(prev => prev.map(z => z.type === zoneType ? { ...z, name: newName } : z))
+  }, [saveHistory])
+
+  const addCustomZone = useCallback((zoneType: SeatType) => {
+    if (zones.some(z => z.type === zoneType)) return
+    saveHistory()
+    const newZone: Zone = {
+      name: zoneType.charAt(0) + zoneType.slice(1).toLowerCase(),
+      type: zoneType,
+      priceMultiplier: DEFAULT_MULTIPLIER[zoneType],
+      color: SEAT_CONFIG[zoneType].color
+    }
+    setZones(prev => [...prev, newZone])
+  }, [zones, saveHistory])
+
+  const removeCustomZone = useCallback((zoneType: string) => {
+    saveHistory()
+    setZones(prev => prev.filter(z => z.type !== zoneType))
+    // Reset any rows using this zone back to SILVER
+    setLayout(l => l.map(row => row.zone === zoneType ? { ...row, zone: 'SILVER' } : row))
+  }, [saveHistory])
+
+  const toggleRowZone = useCallback((rowId: number, zoneType: string) => {
+    saveHistory()
+    setLayout(l => l.map(row => {
+      if (row.id !== rowId) return row
+      // Update the row zone and change all active seats in this row to match the new zone type
+      const seats = row.seats.map(s => ({ ...s, type: zoneType as SeatType }))
+      return { ...row, zone: zoneType, seats }
+    }))
   }, [saveHistory])
 
   const togglePvSelected = useCallback((seatId: number) => {
@@ -251,50 +260,52 @@ export function useTheatreState() {
 
   const setActiveTypeAndAssign = useCallback((type: SeatType) => {
     setActiveType(type)
+    // Add zone to active zones list if not already present
+    addCustomZone(type)
     if (selected.size > 0) {
       saveHistory()
-      setLayout(l => l.map(item => {
-        if (item.kind !== 'row') return item
-        return { ...item, seats: item.seats.map(s => selected.has(s.id) ? { ...s, type } : s) }
-      }))
+      setLayout(l => l.map(row => ({
+        ...row,
+        seats: row.seats.map(s => selected.has(s.id) ? { ...s, type } : s)
+      })))
     }
-  }, [selected, saveHistory])
+  }, [selected, addCustomZone, saveHistory])
 
   // ── Stats ──
   const stats = (() => {
-    let rows = 0, total = 0, silver = 0, gold = 0, exec = 0,
+    let rowCount = 0, total = 0, silver = 0, gold = 0, exec = 0,
         balcony = 0, platinum = 0, recl = 0
-    for (const item of layout) {
-      if (item.kind === 'row') {
-        rows++
-        for (const s of item.seats) {
-          if (s.removed) continue
-          total++
-          if      (s.type === 'SILVER')    silver++
-          else if (s.type === 'GOLD')      gold++
-          else if (s.type === 'EXECUTIVE') exec++
-          else if (s.type === 'BALCONY')   balcony++
-          else if (s.type === 'PLATINUM')  platinum++
-          else                             recl++
-        }
+    for (const row of layout) {
+      rowCount++
+      for (const s of row.seats) {
+        if (s.removed) continue
+        total++
+        if      (s.type === 'SILVER')    silver++
+        else if (s.type === 'GOLD')      gold++
+        else if (s.type === 'EXECUTIVE') exec++
+        else if (s.type === 'BALCONY')   balcony++
+        else if (s.type === 'PLATINUM')  platinum++
+        else                             recl++
       }
     }
-    return { rows, total, silver, gold, exec, balcony, platinum, recl }
+    return { rows: rowCount, total, silver, gold, exec, balcony, platinum, recl }
   })()
 
   // ── Preview multiplier total ──
-  // basePrice lives on the Show, not here — so we sum priceMultiplier * 100 as a
-  // placeholder. Replace 100 with actual basePrice when show context is available.
   const pvTotal = (() => {
     if (pvSelected.size === 0) return 0
-    let total          = 0
-    let currentMult    = 1.0
-    for (const item of layout) {
-      if (item.kind === 'section') currentMult = item.priceMultiplier
-      if (item.kind === 'row') {
-        for (const s of item.seats) {
-          if (pvSelected.has(s.id) && !pvBooked.has(s.id) && !s.removed)
-            total += currentMult * 100   // placeholder base ₹100
+    let total = 0
+    // Create multipliers lookup
+    const multLookup: Record<string, number> = {}
+    zones.forEach(z => {
+      multLookup[z.type] = z.priceMultiplier
+    })
+
+    for (const row of layout) {
+      const currentMult = multLookup[row.zone] ?? 1.0
+      for (const s of row.seats) {
+        if (pvSelected.has(s.id) && !pvBooked.has(s.id) && !s.removed) {
+          total += currentMult * 100 // base price ₹100
         }
       }
     }
@@ -302,14 +313,15 @@ export function useTheatreState() {
   })()
 
   return {
-    layout, aisles, activeType, selected, mode, rowGap, colGap,
+    layout, colAisles, rowAisles, zones, activeType, selected, mode, rowGap, colGap,
     pvBooked, pvSelected, pvTotal, stats,
-    setRowGap, setColGap, setSelected,
+    setRowGap, setColGap, setSelected, setLayout, setColAisles, setRowAisles, setZones,
     enterPreview, enterEdit,
-    addSection, addRow, copyLastRow, removeRow,
+    addRow, copyLastRow, removeRow,
     addColumn, removeColumn, removeSeat,
     toggleSelected, selectRow, deleteSelected, assignType,
-    toggleAisle, updateSection, removeSection,
+    toggleAisle, toggleRowAisle, relabelRows,
+    updateZoneMultiplier, updateZoneName, addCustomZone, removeCustomZone, toggleRowZone,
     togglePvSelected, setActiveTypeAndAssign, undo,
   }
 }

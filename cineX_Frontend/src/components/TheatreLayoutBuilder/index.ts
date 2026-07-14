@@ -1,2 +1,2 @@
 export { default } from './TheatreLayoutBuilder'
-export type { LayoutItem, SeatType, Seat, RowItem, SectionItem } from './constants'
+export type { LayoutItem, SeatType, Seat, RowItem } from './constants'

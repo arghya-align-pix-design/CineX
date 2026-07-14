@@ -3,34 +3,32 @@ export type SeatType = 'SILVER' | 'GOLD' | 'EXECUTIVE' | 'BALCONY' | 'PLATINUM' 
 
 export type Seat = {
   id:      number
-  code:    string   // e.g. "A3" — what the backend stores
+  code:    string   // e.g. "A3"
   type:    SeatType
   removed: boolean
 }
 
 export type RowItem = {
-  kind:  'row'
-  id:    number
-  seats: Seat[]
+  kind:     'row'
+  id:       number
+  rowLabel: string
+  zone:     string // references Zone.type
+  seats:    Seat[]
 }
 
-export type SectionItem = {
-  kind:            'section'
-  id:              number
-  backendId:       number | null   // null until first POST; set from response
+export type Zone = {
   name:            string
-  seatType:        SeatType
-  priceMultiplier: number          // e.g. 1.5  — matches backend field
+  type:            string
+  priceMultiplier: number
   color:           string
 }
 
-export type LayoutItem = SectionItem | RowItem
+export type LayoutItem = RowItem
 
 // ── Module-level ID counters ──
-let _sid = 0, _rid = 0, _secid = 0
+let _sid = 0, _rid = 0
 export const nsi  = () => _sid++
 export const nri  = () => _rid++
-export const nsec = () => _secid++
 
 // ── Seat visual config ──
 export const SEAT_CONFIG: Record<SeatType, {
@@ -46,7 +44,7 @@ export const SEAT_CONFIG: Record<SeatType, {
 
 export const SEAT_TYPES: SeatType[] = ['SILVER', 'GOLD', 'EXECUTIVE', 'BALCONY', 'PLATINUM', 'RECLINER']
 
-const DEFAULT_MULTIPLIER: Record<SeatType, number> = {
+export const DEFAULT_MULTIPLIER: Record<SeatType, number> = {
   SILVER:    1.0,
   GOLD:      1.5,
   EXECUTIVE: 1.3,
@@ -66,48 +64,51 @@ export const mkSeat = (type: SeatType, code: string): Seat => ({
   id: nsi(), code, type, removed: false,
 })
 
-export const mkRow = (seats: Seat[]): RowItem => ({ kind: 'row', id: nri(), seats })
-
-export const mkSection = (type: SeatType): SectionItem => ({
-  kind:            'section',
-  id:              nsec(),
-  backendId:       null,
-  name:            `${type.charAt(0) + type.slice(1).toLowerCase()} Section`,
-  seatType:        type,
-  priceMultiplier: DEFAULT_MULTIPLIER[type],
-  color:           SEAT_CONFIG[type].color,
+export const mkRow = (rowLabel: string, zone: string, seats: Seat[]): RowItem => ({
+  kind: 'row', id: nri(), rowLabel, zone, seats,
 })
 
-// Build a fresh row with correct seat codes given the global row index
+// Build a fresh row with correct seat codes given the global row index and label
 export const mkRowWithCodes = (
   type:            SeatType,
   cols:            number,
   globalRowIndex:  number,
+  label?:          string,
 ): RowItem => {
-  const label = ROW_LABEL(globalRowIndex)
+  const rowLabel = label || ROW_LABEL(globalRowIndex)
   return mkRow(
-    Array.from({ length: cols }, (_, ci) => mkSeat(type, `${label}${ci + 1}`))
+    rowLabel,
+    type,
+    Array.from({ length: cols }, (_, ci) => mkSeat(type, `${rowLabel}${ci + 1}`))
   )
 }
 
-// ── Default seed layout ──
-export function createSeedLayout(): { layout: LayoutItem[]; aisles: Set<number> } {
-  const silverSec   = mkSection('SILVER')
-  const goldSec     = mkSection('GOLD')
-  const reclinerSec = mkSection('RECLINER')
-
-  const silverRows  = Array.from({ length: 3 }, (_, ri) => mkRowWithCodes('SILVER',   12, ri))
-  const goldRows    = Array.from({ length: 2 }, (_, ri) => mkRowWithCodes('GOLD',     12, ri + 3))
-  const reclRows    = [mkRowWithCodes('RECLINER', 8, 5)]
+// ── Default empty seed layout ──
+export function createSeedLayout(): { layout: LayoutItem[]; aisles: Set<number>; zones: Zone[] } {
+  const zones: Zone[] = [
+    { name: 'Silver', type: 'SILVER', priceMultiplier: 1.0, color: SEAT_CONFIG.SILVER.color },
+    { name: 'Gold', type: 'GOLD', priceMultiplier: 1.5, color: SEAT_CONFIG.GOLD.color },
+    { name: 'Recliner', type: 'RECLINER', priceMultiplier: 2.0, color: SEAT_CONFIG.RECLINER.color },
+  ]
+  
+  // Start with 6 default rows for user convenience
+  const rows = [
+    mkRowWithCodes('SILVER', 12, 0),
+    mkRowWithCodes('SILVER', 12, 1),
+    mkRowWithCodes('SILVER', 12, 2),
+    mkRowWithCodes('GOLD', 12, 3),
+    mkRowWithCodes('GOLD', 12, 4),
+    mkRowWithCodes('RECLINER', 8, 5),
+  ]
 
   return {
-    layout: [silverSec, ...silverRows, goldSec, ...goldRows, reclinerSec, ...reclRows],
-    aisles: new Set([5]),
+    layout: rows,
+    aisles: new Set([4, 8]),
+    zones,
   }
 }
 
-// ── Dark mode hook (reactive) ──
-// Use this in a component with useState/useEffect instead of calling isDarkMode() inline
 export function isDarkMode(): boolean {
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
 }
+
