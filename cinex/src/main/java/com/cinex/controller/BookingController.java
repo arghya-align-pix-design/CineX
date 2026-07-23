@@ -3,6 +3,7 @@ package com.cinex.controller;
 import com.cinex.dto.BookingInitiateRequest;
 import com.cinex.dto.BookingResponse;
 import com.cinex.service.BookingService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -18,7 +19,7 @@ public class BookingController {
 
     @PostMapping("/initiate")
     @PreAuthorize("hasRole('CONSUMER')")
-    public BookingResponse initiateBooking(@RequestBody BookingInitiateRequest request,
+    public BookingResponse initiateBooking(@Valid @RequestBody BookingInitiateRequest request,
                                             Authentication authentication) {
         return bookingService.initiateBooking(request, authentication.getName());
     }

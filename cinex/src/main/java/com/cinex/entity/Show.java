@@ -23,11 +23,18 @@ public class Show {
     private Theatre theatre;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "section_id", nullable = false)
+    @JoinColumn(name = "section_id")
     private Section section;
+
+    // New: Shows created via the new layout designer reference a Screen
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "screen_id")
+    private Screen screen;
 
     @Column(nullable = false)
     private LocalDate showDate;
+
+    private LocalDate endDate;
 
     @Column(nullable = false)
     private LocalTime showTime;

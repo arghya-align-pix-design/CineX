@@ -114,5 +114,17 @@ public class SectionService {
         sectionRepository.save(section);
     }
 
+    public com.cinex.dto.SectionResponse toResponse(Section section) {
+        com.cinex.dto.SectionResponse response = new com.cinex.dto.SectionResponse();
+        response.setId(section.getId());
+        response.setName(section.getName());
+        response.setSeatType(section.getSeatType().name());
+        response.setRows(section.getRows());
+        response.setCols(section.getCols());
+        response.setPriceMultiplier(section.getPriceMultiplier());
+        response.setActive(section.isActive());
+        response.setSeatGrid(section.getSeatGrid());
+        return response;
+    }
 
 }

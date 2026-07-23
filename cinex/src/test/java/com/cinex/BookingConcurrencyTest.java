@@ -8,10 +8,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
 import com.cinex.service.SeatLockService;
 
 @SpringBootTest
+@ActiveProfiles("test")
 public class BookingConcurrencyTest {
 
     @Autowired
@@ -22,6 +24,9 @@ public class BookingConcurrencyTest {
         Long showId = 1L;
         String seatCode = "A5";
         int threadCount = 10;
+
+        // Ensure key is cleared before starting concurrency test
+        seatLockService.unlockSeat(showId, seatCode);
 
         AtomicInteger successCount = new AtomicInteger(0);
         AtomicInteger failCount = new AtomicInteger(0);

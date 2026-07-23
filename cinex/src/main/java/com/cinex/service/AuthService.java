@@ -8,6 +8,7 @@ import com.cinex.dto.AuthResponse;
 import com.cinex.dto.RegisterRequest;
 import com.cinex.entity.User;
 import com.cinex.repository.UserRepository;
+import com.cinex.repository.BannedVendorRepository;
 
 import lombok.RequiredArgsConstructor;
 
@@ -18,8 +19,13 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final BannedVendorRepository bannedVendorRepository;
 
     public AuthResponse register(RegisterRequest request) {
+        if (bannedVendorRepository.existsByEmail(request.getEmail())) {
+            throw new RuntimeException("This email has been permanently banned from the platform");
+        }
+
         if (userRepository.findByEmail(request.getEmail()).isPresent()) {
             throw new RuntimeException("Email already registered");
         }
@@ -38,8 +44,16 @@ public class AuthService {
     }
 
     public AuthResponse login(String email, String password) {
+        if (bannedVendorRepository.existsByEmail(email)) {
+            throw new RuntimeException("This email has been permanently banned from the platform");
+        }
+
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (user.getRole() == User.Role.ADMIN) {
+            throw new RuntimeException("Administrators must authenticate via the secure Admin Portal.");
+        }
 
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             throw new RuntimeException("Invalid password");
@@ -66,6 +80,10 @@ public class AuthService {
         }
 
         String email = jwtUtil.extractEmailFromAnyToken(token);
+        if (bannedVendorRepository.existsByEmail(email)) {
+            throw new RuntimeException("This email has been permanently banned from the platform");
+        }
+
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 

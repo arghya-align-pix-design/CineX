@@ -7,4 +7,6 @@ import com.cinex.entity.Movie;
 
 public interface MovieRepository  extends JpaRepository<Movie, Long>{
     List<Movie> findByIsActiveTrue();
+    long countByIsActiveTrue();
+    long countByIsActiveFalse();
 }

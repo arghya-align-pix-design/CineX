@@ -4,6 +4,7 @@ import java.util.Date;
 
 import javax.crypto.SecretKey;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import io.jsonwebtoken.Claims;
@@ -15,11 +16,13 @@ import io.jsonwebtoken.security.Keys;
 @Component
 public class JwtUtil {
 
-    private static final String SECRET = "cinex-super-secret-key-must-be-32-chars!!";
+    @Value("${cinex.jwt.secret:cinex-super-secret-key-must-be-32-chars!!}")
+    private String secret;
+
     private static final long EXPIRATION = 1000 * 60 * 60 * 24;
 
     private SecretKey getKey() {
-        return Keys.hmacShaKeyFor(SECRET.getBytes());
+        return Keys.hmacShaKeyFor(secret.getBytes());
     }
 
     public String generateToken(String email, String role) {

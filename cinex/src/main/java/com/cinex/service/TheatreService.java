@@ -46,8 +46,18 @@ public class TheatreService {
         Theatre theatre= theatreRepository.findById(theatreId)
                 .orElseThrow(()-> new RuntimeException("Theatre not found"));
         
-        // Only load active sections
-        theatre.getSections().removeIf(s -> !s.isActive());
+        // Filter to active sections using a NEW list — never mutate the managed collection
+        java.util.List<com.cinex.entity.Section> activeSections = theatre.getSections().stream()
+                .filter(com.cinex.entity.Section::isActive)
+                .collect(java.util.stream.Collectors.toList());
+        theatre.setSections(activeSections);
+
+        // Filter to active screens
+        java.util.List<com.cinex.entity.Screen> activeScreens = theatre.getScreens().stream()
+                .filter(com.cinex.entity.Screen::isActive)
+                .collect(java.util.stream.Collectors.toList());
+        theatre.setScreens(activeScreens);
+
         return theatre;
     }
 

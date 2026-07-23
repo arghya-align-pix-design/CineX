@@ -19,4 +19,5 @@ public class TheatreResponse {
     private boolean hasRecliner;
     private boolean isActive;
     private List<SectionResponse> sections;
+    private List<ScreenResponse> screens;
 }

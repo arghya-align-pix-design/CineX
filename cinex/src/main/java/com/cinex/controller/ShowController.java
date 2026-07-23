@@ -3,10 +3,14 @@ package com.cinex.controller;
 import java.time.LocalDate;
 import java.util.List;
 
+import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -27,9 +31,11 @@ public class ShowController {
     private final ShowService showService;
 
     @PostMapping
-    //@PreAuthorize("hasRole('VENDOR')")
-    public Show createShow(@RequestBody ShowRequest request) {
-        return showService.createShow(request);
+    @PreAuthorize("hasRole('VENDOR')")
+    public ShowResponse createShow(@Valid @RequestBody ShowRequest request,
+                                    org.springframework.security.core.Authentication authentication) {
+        Show show = showService.createShow(request, authentication.getName());
+        return showService.getShowWithSeats(show.getId());
     }
 
     @GetMapping
@@ -48,5 +54,20 @@ public class ShowController {
     @GetMapping("/{id}/seats")
     public Object getShowSeats(@PathVariable Long id) {
         return showService.getShowSeats(id);
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('VENDOR')")
+    public void removeShow(@PathVariable Long id, org.springframework.security.core.Authentication authentication) {
+        showService.removeShow(id, authentication.getName());
+    }
+
+    @PutMapping("/{id}/end-date")
+    @PreAuthorize("hasRole('VENDOR')")
+    public ShowResponse updateShowEndDate(
+            @PathVariable Long id,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            org.springframework.security.core.Authentication authentication) {
+        return showService.updateShowEndDate(id, endDate, authentication.getName());
     }
 }

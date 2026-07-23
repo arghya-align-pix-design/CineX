@@ -13,7 +13,7 @@ import lombok.RequiredArgsConstructor;
 public class SeatLockService {
 
     private final StringRedisTemplate redisTemplate;
-    private static final long LOCK_TTL_MINUTES = 10;
+    private static final long LOCK_TTL_MINUTES = 8;
 
     private String lockKey(Long showId, String seatCode) {
         return "seat_lock:" + showId + ":" + seatCode;

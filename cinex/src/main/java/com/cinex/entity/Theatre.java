@@ -63,4 +63,7 @@ public class Theatre {
     //@JsonIgnore
     @OneToMany(mappedBy = "theatre", cascade = CascadeType.ALL)
     List<Section> sections = new ArrayList<>();
+
+    @OneToMany(mappedBy = "theatre", cascade = CascadeType.ALL)
+    List<Screen> screens = new ArrayList<>();
 }

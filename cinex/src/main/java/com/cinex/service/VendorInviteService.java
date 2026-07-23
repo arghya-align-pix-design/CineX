@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 
 import com.cinex.entity.User;
 import com.cinex.repository.UserRepository;
+import com.cinex.repository.BannedVendorRepository;
 
 import lombok.RequiredArgsConstructor;
 
@@ -14,8 +15,14 @@ import lombok.RequiredArgsConstructor;
 public class VendorInviteService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final BannedVendorRepository bannedVendorRepository;
+    private final EmailService emailService;
 
     public String inviteVendor(String email){
+        if (bannedVendorRepository.existsByEmail(email)) {
+            throw new RuntimeException("This email has been permanently banned from the platform");
+        }
+
         if (userRepository.findByEmail(email).isPresent()) {
             throw new RuntimeException("Email already exists");
         }
@@ -31,9 +38,10 @@ public class VendorInviteService {
 
         userRepository.save(vendor);
 
-        // In production this would send an email
-        // For now we return temp password directly so you can test in Postman
-        return "Vendor created. Temp password: " + tempPassword;
+        // Dispatch invitation email asynchronously
+        emailService.sendInvitationEmail(email, tempPassword);
+
+        return "Vendor invited successfully. Invitation email dispatched to " + email + ". Temp password: " + tempPassword;
     }
 
     public void changePassword(String email, String newPassword){
