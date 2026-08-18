@@ -7,9 +7,16 @@ public class AuthResponse {
     private String role;
     private boolean firstLogin;
 
+    private boolean demoMode;
+
     public AuthResponse(String token, String role){
         this.token=token;
         this.role=role;
     }
 
+    public AuthResponse(String token, String role, boolean demoMode){
+        this.token=token;
+        this.role=role;
+        this.demoMode=demoMode;
+    }
 }

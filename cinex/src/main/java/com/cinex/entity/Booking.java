@@ -43,6 +43,9 @@ public class Booking {
 
     private String razorpayOrderId;
 
+    @Version
+    private long version = 0L;
+
     public enum BookingStatus {
         PENDING, CONFIRMED, CANCELLED
     }

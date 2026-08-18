@@ -38,7 +38,7 @@ public class AdminController {
     // Only use this once to create first admin
     // Remove or secure this endpoint in production
     @PostMapping("/setup")
-    public String setupAdmin(@Valid @RequestBody AdminSetupRequest request) {
+    public Map<String, String> setupAdmin(@Valid @RequestBody AdminSetupRequest request) {
         return adminService.setupAdmin(request.getEmail(), request.getPassword());
     }
 
@@ -66,15 +66,15 @@ public class AdminController {
 
     @PutMapping("/vendors/{id}/suspend")
     @PreAuthorize("hasRole('ADMIN')")
-    public String suspendVendor(@PathVariable Long id) {
-        adminService.suspendVendor(id);
+    public String suspendVendor(@PathVariable Long id, Authentication authentication) {
+        adminService.suspendVendor(id, authentication.getName());
         return "Vendor account suspended successfully";
     }
 
     @PutMapping("/vendors/{id}/reactivate")
     @PreAuthorize("hasRole('ADMIN')")
-    public String reactivateVendor(@PathVariable Long id) {
-        adminService.reactivateVendor(id);
+    public String reactivateVendor(@PathVariable Long id, Authentication authentication) {
+        adminService.reactivateVendor(id, authentication.getName());
         return "Vendor account reactivated successfully";
     }
 
@@ -87,8 +87,8 @@ public class AdminController {
 
     @DeleteMapping("/vendors/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public String deleteVendor(@PathVariable Long id) {
-        adminService.deleteVendor(id);
+    public String deleteVendor(@PathVariable Long id, Authentication authentication) {
+        adminService.deleteVendor(id, authentication.getName());
         return "Vendor deleted successfully";
     }
 
@@ -113,19 +113,19 @@ public class AdminController {
 
     @PostMapping("/movies")
     @PreAuthorize("hasRole('ADMIN')")
-    public Movie createMovie(@Valid @RequestBody MovieRequest request) {
-        return movieService.createMovie(request);
+    public Movie createMovie(@Valid @RequestBody MovieRequest request, Authentication authentication) {
+        return movieService.createMovie(request, authentication.getName());
     }
 
     @PutMapping("/movies/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public Movie updateMovie(@PathVariable Long id, @Valid @RequestBody MovieRequest request) {
-        return movieService.updateMovie(id, request);
+    public Movie updateMovie(@PathVariable Long id, @Valid @RequestBody MovieRequest request, Authentication authentication) {
+        return movieService.updateMovie(id, request, authentication.getName());
     }
 
     @PutMapping("/movies/{id}/toggle-active")
     @PreAuthorize("hasRole('ADMIN')")
-    public Movie toggleMovieActive(@PathVariable Long id) {
-        return movieService.toggleMovieActive(id);
+    public Movie toggleMovieActive(@PathVariable Long id, Authentication authentication) {
+        return movieService.toggleMovieActive(id, authentication.getName());
     }
 }

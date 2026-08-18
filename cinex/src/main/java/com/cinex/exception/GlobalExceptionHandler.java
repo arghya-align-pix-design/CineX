@@ -11,8 +11,34 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 
+import jakarta.persistence.OptimisticLockException;
+import jakarta.persistence.PessimisticLockException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+
 @ControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(SeatConflictException.class)
+    public ResponseEntity<Map<String, Object>> handleSeatConflict(SeatConflictException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler({OptimisticLockException.class, ObjectOptimisticLockingFailureException.class})
+    public ResponseEntity<Map<String, Object>> handleOptimisticLock(Exception ex) {
+        return buildResponse(HttpStatus.CONFLICT,
+                "Seat reservation conflict — another user just modified this booking. Please retry.");
+    }
+
+    @ExceptionHandler(PessimisticLockException.class)
+    public ResponseEntity<Map<String, Object>> handlePessimisticLock(PessimisticLockException ex) {
+        return buildResponse(HttpStatus.CONFLICT,
+                "The system is busy processing another booking for the same seats. Please retry in a moment.");
+    }
+
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<Map<String, Object>> handleRateLimit(RateLimitExceededException ex) {
+        return buildResponse(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+    }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(ResourceNotFoundException ex) {

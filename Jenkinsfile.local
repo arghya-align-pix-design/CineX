@@ -1,0 +1,67 @@
+pipeline {
+    agent any
+
+    environment {
+        APP_NAME = 'cinex'
+        BUILD_TAG = "${BUILD_NUMBER}"
+    }
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        ansiColor('xterm')
+    }
+
+    stages {
+        stage('Checkout Source') {
+            steps {
+                echo '=== Stage 1: Checking out source code ==='
+                checkout scm
+            }
+        }
+
+        stage('Backend Unit & Integration Tests') {
+            steps {
+                echo '=== Stage 2: Running Spring Boot Maven Tests ==='
+                dir('cinex') {
+                    sh './mvnw clean test'
+                }
+            }
+        }
+
+        stage('Frontend Build') {
+            steps {
+                echo '=== Stage 3: Compiling React 19 Frontend ==='
+                dir('cineX_Frontend') {
+                    sh 'npm ci'
+                    sh 'npm run build'
+                }
+            }
+        }
+
+        stage('Local Docker Build & Launch') {
+            steps {
+                echo '=== Stage 4: Building Local Docker Containers ==='
+                sh 'docker compose -f docker-compose.yml build --no-cache'
+                sh 'docker compose -f docker-compose.yml up -d'
+            }
+        }
+
+        stage('Health & Readiness Verification') {
+            steps {
+                echo '=== Stage 5: Verifying Container Health ==='
+                sleep time: 10, unit: 'SECONDS'
+                sh 'curl --fail http://localhost:9090/actuator/health || exit 1'
+                echo '=== Local Deployment Successful! ==='
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline execution complete.'
+        }
+        failure {
+            echo 'Pipeline failed! Check console logs.'
+        }
+    }
+}

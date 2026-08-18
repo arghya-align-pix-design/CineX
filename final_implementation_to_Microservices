@@ -1,0 +1,686 @@
+# CineX — Final Implementation Plan
+
+> The complete phased roadmap for evolving CineX from a working monolith to a production-grade microservices architecture with full observability, CI/CD, and container orchestration.
+
+---
+
+## Architecture Evolution Overview
+
+```mermaid
+graph LR
+    P0["Phase 0<br/>Monolith +<br/>Prometheus ✅"] --> P1["Phase 1<br/>+ ELK Stack"]
+    P1 --> P2["Phase 2<br/>Full Docker<br/>Containerization"]
+    P2 --> P3["Phase 3<br/>Jenkins CI/CD"]
+    P3 --> P4["Phase 4<br/>Microservices<br/>Decomposition"]
+    P4 --> P5["Phase 5<br/>Config Server +<br/>API Gateway"]
+    P5 --> P6["Phase 6<br/>Kubernetes"]
+    P6 --> P7["Phase 7<br/>Dashboards +<br/>Alerting"]
+```
+
+---
+
+## Component Inventory (Final State)
+
+| Category | Components | Count |
+|---|---|---|
+| Business Services | auth, catalog, booking, notification | 4 |
+| Spring Cloud Infra | API Gateway, Config Server | 2 |
+| Data Stores | PostgreSQL, Redis | 2 |
+| Observability — Logs | Elasticsearch, Logstash, Kibana | 3 |
+| Observability — Metrics | Prometheus, Grafana | 2 |
+| CI/CD | Jenkins | 1 |
+| Orchestration | Kubernetes | 1 |
+| **Total** | | **15** |
+
+---
+
+## Phase 0 — Current State ✅
+
+**Status**: Complete
+
+Everything in this phase is already built and tested.
+
+### What Exists
+
+| Layer | Details |
+|---|---|
+| **Backend** | Spring Boot 3.5 monolith (`cinex/`), Java 21, port `9090` |
+| **Frontend** | Vite + React + TailwindCSS (`cineX_Frontend/`), port `5173` |
+| **Database** | PostgreSQL 15 via Docker (port `5433`) |
+| **Cache** | Redis 7 via Docker (port `6379`) |
+| **Metrics** | Actuator + Micrometer Prometheus + Grafana |
+| **Auth** | JWT-based with Spring Security, TOTP for admin MFA |
+| **Booking** | Redis seat locking, mock Razorpay payments |
+
+### Files Touched
+
+- [x] `cinex/pom.xml` — Actuator + Micrometer Prometheus dependencies
+- [x] `cinex/src/main/resources/application.properties` — Actuator exposure + Prometheus export enabled
+- [x] `cinex/src/main/java/com/cinex/config/SecurityConfig.java` — `/actuator/**` permitted
+- [x] `prometheus.yml` — Scrape config targeting `host.docker.internal:9090`
+- [x] `docker-compose.yml` — Postgres, Redis, pgAdmin, Prometheus, Grafana
+- [x] `ObservabilityIntegrationTest.java` — Health + Prometheus endpoint tests (3/3 pass)
+
+---
+
+## Phase 1 — ELK Stack on the Monolith
+
+**Goal**: Get centralized structured logging working on the existing monolith before any splitting. Proves the pipeline end-to-end with minimal risk.
+
+### Why First?
+
+- Learn ELK with **one** service, not four
+- The `logback-spring.xml` you write here gets copied verbatim into every future microservice
+- Immediately useful: searchable logs, error dashboards, request tracing
+
+### Tasks
+
+- [ ] Add `logstash-logback-encoder` dependency to `cinex/pom.xml`
+  ```xml
+  <dependency>
+      <groupId>net.logstash.logback</groupId>
+      <artifactId>logstash-logback-encoder</artifactId>
+      <version>8.0</version>
+  </dependency>
+  ```
+
+- [ ] Create `cinex/src/main/resources/logback-spring.xml`
+  - Console appender for local dev (human-readable)
+  - Logstash TCP appender for Docker profile (structured JSON)
+  - Include `service` name, `traceId`, `userId` in every log line
+
+- [ ] Create MDC (Mapped Diagnostic Context) servlet filter
+  - New file: `cinex/src/main/java/com/cinex/config/LoggingFilter.java`
+  - Extract `userId` from JWT and inject into MDC
+  - Generate `traceId` (UUID) per request and inject into MDC
+  - These fields automatically appear in every log line
+
+- [ ] Create `logstash/pipeline/logstash.conf`
+  - Input: TCP on port `5000` with `json_lines` codec
+  - Filter: Parse timestamp, route by service name
+  - Output: Index into Elasticsearch as `cinex-{service}-{date}`
+
+- [ ] Add ELK services to `docker-compose.yml`
+
+  | Service | Image | Host Port | Container Port |
+  |---|---|---|---|
+  | Elasticsearch | `elasticsearch:8.15.0` | `9200` | `9200` |
+  | Logstash | `logstash:8.15.0` | `5044`, `5000` | `5044`, `5000` |
+  | Kibana | `kibana:8.15.0` | `5601` | `5601` |
+
+- [ ] Add `spring.profiles.active=docker` profile for containerized runs
+  - `application-docker.properties`: same as dev but with `logstash` host pointing to Docker network name
+
+- [ ] Start full stack, verify logs flow to Kibana
+- [ ] Create Kibana index pattern `cinex-*`
+- [ ] Write integration test verifying structured log output format
+
+### New Files
+
+```
+CineX/
+├── logstash/
+│   └── pipeline/
+│       └── logstash.conf
+├── cinex/
+│   └── src/main/resources/
+│       ├── logback-spring.xml          [NEW]
+│       └── application-docker.properties  [NEW]
+│   └── src/main/java/com/cinex/config/
+│       └── LoggingFilter.java          [NEW]
+```
+
+### Verification
+
+- `docker compose up -d` → all services healthy
+- Hit `POST /auth/login` → check Kibana for structured JSON log entry
+- Search Kibana by `traceId` → find all log lines from that request
+- Search Kibana by `level:ERROR` → verify error logs are indexed
+
+---
+
+## Phase 2 — Full Docker Containerization
+
+**Goal**: The entire CineX application (backend + frontend) runs containerized via `docker compose up`. No local Java/Node needed.
+
+### Why Before Jenkins?
+
+Jenkins needs to build Docker images. If your Dockerfiles don't work reliably, Jenkins pipelines will fail. Prove containerization works manually first.
+
+### Tasks
+
+- [ ] Verify existing `cinex/Dockerfile` works end-to-end
+  - Build: `docker build -t cinex-backend ./cinex`
+  - Run: connects to Dockerized Postgres, Redis, Logstash
+  - Fix any issues (timezone, profile activation, health checks)
+
+- [ ] Create `cineX_Frontend/Dockerfile`
+  ```dockerfile
+  # Build stage
+  FROM node:22-alpine AS build
+  WORKDIR /app
+  COPY package*.json ./
+  RUN npm ci
+  COPY . .
+  RUN npm run build
+
+  # Serve stage
+  FROM nginx:alpine
+  COPY --from=build /app/dist /usr/share/nginx/html
+  COPY nginx.conf /etc/nginx/conf.d/default.conf
+  EXPOSE 80
+  ```
+
+- [ ] Create `cineX_Frontend/nginx.conf`
+  - Serve static files
+  - Proxy `/api/*` requests to the backend service
+  - Handle SPA routing (fallback to `index.html`)
+
+- [ ] Add `cinex-backend` and `cinex-frontend` services to `docker-compose.yml`
+
+  | Service | Build Context | Host Port |
+  |---|---|---|
+  | cinex-backend | `./cinex` | `9090` |
+  | cinex-frontend | `./cineX_Frontend` | `80` |
+
+- [ ] Test full stack: `docker compose up --build`
+  - Frontend loads at `http://localhost`
+  - API calls proxy through Nginx to backend
+  - Logs flow to Kibana
+  - Metrics scraped by Prometheus
+
+### New Files
+
+```
+CineX/
+├── cineX_Frontend/
+│   ├── Dockerfile                [NEW]
+│   └── nginx.conf                [NEW]
+```
+
+### Verification
+
+- `docker compose up --build -d` → all 10+ containers start and become healthy
+- Browse `http://localhost` → frontend loads, login works
+- Browse `http://localhost:5601` → Kibana shows backend logs
+- Browse `http://localhost:3030` → Grafana shows JVM metrics
+- Tear down: `docker compose down` → clean shutdown
+
+---
+
+## Phase 3 — Jenkins CI/CD
+
+**Goal**: Automated build → test → Docker image → push pipeline for the monolith. This pipeline structure later duplicates per microservice.
+
+### Why Before Microservices?
+
+Get one pipeline working correctly. When you split into 4 services, you clone and adjust — not debug Jenkins + microservices simultaneously.
+
+### Tasks
+
+- [ ] Run Jenkins as a Docker container (add to `docker-compose.yml` or run separately)
+
+  | Service | Image | Host Port |
+  |---|---|---|
+  | Jenkins | `jenkins/jenkins:lts` | `8085` |
+
+- [ ] Create `cinex/Jenkinsfile` (Declarative Pipeline)
+  ```groovy
+  pipeline {
+      agent any
+      stages {
+          stage('Checkout')  { steps { checkout scm } }
+          stage('Build')     { steps { sh './mvnw clean package -DskipTests' } }
+          stage('Test')      { steps { sh './mvnw test' } }
+          stage('Docker Build') {
+              steps {
+                  sh 'docker build -t cinex-backend:${BUILD_NUMBER} ./cinex'
+              }
+          }
+          stage('Docker Push') {
+              steps {
+                  // Push to Docker Hub or private registry
+                  sh 'docker push cinex-backend:${BUILD_NUMBER}'
+              }
+          }
+      }
+      post {
+          always { junit 'cinex/target/surefire-reports/*.xml' }
+      }
+  }
+  ```
+
+- [ ] Create `cineX_Frontend/Jenkinsfile`
+  - `npm ci` → `npm run build` → `docker build` → `docker push`
+
+- [ ] Configure Jenkins:
+  - Install Docker Pipeline plugin
+  - Add Docker Hub credentials
+  - Create multibranch pipeline pointing to Git repo
+  - Set up webhook trigger on `git push`
+
+### New Files
+
+```
+CineX/
+├── cinex/
+│   └── Jenkinsfile               [NEW]
+├── cineX_Frontend/
+│   └── Jenkinsfile               [NEW]
+```
+
+### Verification
+
+- Push a commit → Jenkins triggers automatically
+- Pipeline runs all stages green
+- Docker image appears in registry with build number tag
+- Test results published in Jenkins dashboard
+
+---
+
+## Phase 4 — Microservices Decomposition
+
+**Goal**: Split the monolith into 4 independent Spring Boot services, each with its own database, Dockerfile, ELK logging, and Prometheus metrics.
+
+### Service Extraction Order
+
+Extract in order of **lowest coupling first**:
+
+```
+① auth-service (fewest dependencies, clean boundary)
+② notification-service (fire-and-forget, no one depends on it)  
+③ booking-service (depends on catalog for show data)
+④ catalog-service (the remaining monolith — rename and clean up)
+```
+
+---
+
+### 4A. Extract auth-service
+
+**Port**: `8081` | **Database**: `auth-db`
+
+| Move From Monolith | To auth-service |
+|---|---|
+| `AuthController` | `controller/AuthController.java` |
+| `VendorController` | `controller/VendorController.java` |
+| `AuthService` | `service/AuthService.java` |
+| `VendorInviteService` | `service/VendorInviteService.java` |
+| `TotpService` | `service/TotpService.java` |
+| `JwtUtil`, `JwtFilter` | `config/JwtUtil.java`, `config/JwtFilter.java` |
+| `SecurityConfig` | `config/SecurityConfig.java` |
+| `User`, `BannedVendor` entities | `entity/` |
+| `UserRepository`, `BannedVendorRepository` | `repository/` |
+| Related DTOs | `dto/` |
+
+**New endpoint to add**: `GET /auth/validate` — other services call this to verify JWT tokens.
+
+**Checklist**:
+- [ ] Create `auth-service/` directory with Spring Boot scaffold
+- [ ] Move listed classes, adjust package names
+- [ ] Create `auth-db` PostgreSQL (separate container or schema)
+- [ ] Copy `logback-spring.xml` (change `SERVICE_NAME` to `auth-service`)
+- [ ] Add Actuator + Prometheus dependencies
+- [ ] Write `Dockerfile`
+- [ ] Create `Jenkinsfile`
+- [ ] Write tests
+- [ ] Update Prometheus scrape config to include `auth-service:8081`
+
+---
+
+### 4B. Extract notification-service
+
+**Port**: `8084` | **Database**: in-memory or shared
+
+| Move From Monolith | To notification-service |
+|---|---|
+| `MessageController` | `controller/MessageController.java` |
+| `MessageService` | `service/MessageService.java` |
+| `EmailService` | `service/EmailService.java` |
+| `Message` entity | `entity/Message.java` |
+| `MessageRepository` | `repository/MessageRepository.java` |
+| Related DTOs | `dto/` |
+
+**New endpoint to add**: `POST /notifications/send` — other services trigger emails/messages via this.
+
+**Checklist**:
+- [ ] Create `notification-service/` directory
+- [ ] Move listed classes
+- [ ] Configure SMTP settings independently
+- [ ] Copy `logback-spring.xml`
+- [ ] Add Actuator + Prometheus
+- [ ] Write `Dockerfile`, `Jenkinsfile`
+- [ ] Update Prometheus scrape config
+
+---
+
+### 4C. Extract booking-service
+
+**Port**: `8083` | **Database**: `booking-db` + Redis
+
+| Move From Monolith | To booking-service |
+|---|---|
+| `BookingController` | `controller/BookingController.java` |
+| `PaymentController` | `controller/PaymentController.java` |
+| `BookingService` | `service/BookingService.java` |
+| `PaymentService` | `service/PaymentService.java` |
+| `SeatLockService` | `service/SeatLockService.java` |
+| `Booking` entity | `entity/Booking.java` |
+| `BookingRepository` | `repository/BookingRepository.java` |
+| Related DTOs | `dto/` |
+
+**Inter-service calls needed**:
+- `catalog-service` → validate show, fetch seat layout (`GET /internal/shows/{id}/seats`)
+- `notification-service` → send booking confirmation (`POST /notifications/send`)
+
+**Checklist**:
+- [ ] Create `booking-service/` directory
+- [ ] Move listed classes
+- [ ] Add REST client (Spring `RestClient`) for catalog-service calls
+- [ ] Create `booking-db` PostgreSQL
+- [ ] Configure Redis connection
+- [ ] Copy `logback-spring.xml`
+- [ ] Add Actuator + Prometheus
+- [ ] Write `Dockerfile`, `Jenkinsfile`
+- [ ] Update Prometheus scrape config
+
+---
+
+### 4D. Remaining Monolith → catalog-service
+
+**Port**: `8082` | **Database**: `catalog-db`
+
+The remaining code after extraction becomes `catalog-service`:
+
+| Stays In catalog-service |
+|---|
+| `MovieController`, `MovieService` |
+| `AdminController`, `AdminService` |
+| `TheatreController`, `TheatreService` |
+| `ScreenController`, `ScreenService`, `SectionService` |
+| `ShowController`, `ShowService` |
+| `VendorDashboardController`, `VendorDashboardService` |
+| `Movie`, `MovieImage`, `Theatre`, `Screen`, `Section`, `Show` entities |
+| All related repositories, DTOs, mappers |
+
+**New internal endpoints to add**:
+- `GET /internal/shows/{id}` — for booking-service
+- `GET /internal/shows/{id}/seats` — for booking-service seat validation
+
+**Checklist**:
+- [ ] Rename `cinex/` → `catalog-service/`
+- [ ] Remove all extracted code (auth, booking, notification)
+- [ ] Update `spring.application.name=catalog-service`
+- [ ] Change port to `8082`
+- [ ] Add internal endpoints
+- [ ] Update `logback-spring.xml` service name
+- [ ] Update Prometheus scrape config
+- [ ] Update `Jenkinsfile`
+
+---
+
+### Phase 4 — Final File Structure
+
+```
+CineX/
+├── docker-compose.yml
+├── prometheus.yml
+├── logstash/pipeline/logstash.conf
+├── auth-service/
+│   ├── Dockerfile
+│   ├── Jenkinsfile
+│   ├── pom.xml
+│   └── src/main/
+│       ├── java/com/cinex/auth/
+│       └── resources/
+│           ├── application.properties
+│           └── logback-spring.xml
+├── catalog-service/
+│   ├── Dockerfile
+│   ├── Jenkinsfile
+│   ├── pom.xml
+│   └── src/main/
+│       ├── java/com/cinex/catalog/
+│       └── resources/
+├── booking-service/
+│   ├── Dockerfile
+│   ├── Jenkinsfile
+│   ├── pom.xml
+│   └── src/main/
+│       ├── java/com/cinex/booking/
+│       └── resources/
+├── notification-service/
+│   ├── Dockerfile
+│   ├── Jenkinsfile
+│   ├── pom.xml
+│   └── src/main/
+│       ├── java/com/cinex/notification/
+│       └── resources/
+└── cineX_Frontend/
+    ├── Dockerfile
+    ├── Jenkinsfile
+    └── src/
+```
+
+---
+
+## Phase 5 — Config Server + API Gateway
+
+**Goal**: Centralized configuration and a single entry point for the frontend.
+
+### 5A. Spring Cloud Config Server
+
+**Port**: `8888`
+
+- [ ] Create `config-server/` Spring Boot project
+  - Dependency: `spring-cloud-config-server`
+  - Points to a Git repo (or local directory) containing `auth-service.yml`, `catalog-service.yml`, etc.
+- [ ] Each microservice adds `spring-cloud-starter-config` dependency
+- [ ] Each microservice's `application.properties` reduces to just:
+  ```properties
+  spring.application.name=auth-service
+  spring.config.import=optional:configserver:http://config-server:8888
+  ```
+- [ ] Shared config (DB credentials, Redis host, Logstash host) lives in one place
+- [ ] Write `Dockerfile` for config-server
+
+### 5B. API Gateway (Spring Cloud Gateway)
+
+**Port**: `8080`
+
+- [ ] Create `api-gateway/` Spring Boot project
+  - Dependency: `spring-cloud-starter-gateway`
+
+- [ ] Route configuration:
+
+  | Route Pattern | Target |
+  |---|---|
+  | `/auth/**` | `auth-service:8081` |
+  | `/movies/**`, `/theatres/**`, `/screens/**`, `/shows/**`, `/admin/**`, `/vendor/**` | `catalog-service:8082` |
+  | `/bookings/**`, `/payments/**` | `booking-service:8083` |
+  | `/messages/**` | `notification-service:8084` |
+
+- [ ] Add `traceId` propagation filter at the gateway level
+  - Generate UUID if no `X-Trace-Id` header exists
+  - Forward header to downstream services
+  - All services read this header and inject into MDC for logging
+
+- [ ] Add rate limiting, CORS config at gateway level
+
+- [ ] Update `cineX_Frontend` — change API base URL to `http://localhost:8080` (gateway only)
+
+- [ ] Write `Dockerfile`, `Jenkinsfile`
+
+### Phase 5 — New Files
+
+```
+CineX/
+├── config-server/
+│   ├── Dockerfile
+│   ├── pom.xml
+│   └── src/
+├── api-gateway/
+│   ├── Dockerfile
+│   ├── Jenkinsfile
+│   ├── pom.xml
+│   └── src/
+├── config-repo/               # Git repo or directory with service configs
+│   ├── auth-service.yml
+│   ├── catalog-service.yml
+│   ├── booking-service.yml
+│   └── notification-service.yml
+```
+
+---
+
+## Phase 6 — Kubernetes Migration
+
+**Goal**: Move from `docker-compose.yml` to Kubernetes manifests. Replace Docker Compose service discovery with K8s DNS.
+
+> [!IMPORTANT]
+> **No Eureka needed.** Kubernetes provides DNS-based service discovery natively. `http://auth-service:8081` resolves automatically inside the cluster.
+
+### Tasks
+
+- [ ] Create `k8s/` directory for all manifests
+
+- [ ] Per microservice, create:
+  - `Deployment` (replicas, image, env vars, health probes)
+  - `Service` (ClusterIP for internal access)
+  - `ConfigMap` (externalized config)
+  - `Secret` (DB passwords, JWT secret, SMTP password)
+
+- [ ] For data stores:
+  - PostgreSQL: `StatefulSet` + `PersistentVolumeClaim`
+  - Redis: `Deployment` + `Service`
+  - Elasticsearch: `StatefulSet` + `PVC`
+
+- [ ] For observability:
+  - Prometheus: use `kube-prometheus-stack` Helm chart
+  - Grafana: included in the Helm chart
+  - ELK: use `elastic/elasticsearch` Helm chart or manifests
+
+- [ ] API Gateway: `Service` of type `LoadBalancer` or `NodePort` (the only externally-exposed service)
+
+- [ ] Jenkins pipeline update: `docker push` → `kubectl apply` or Helm upgrade
+
+- [ ] Create `Ingress` resource for external HTTPS access
+
+### Manifest Structure
+
+```
+CineX/
+└── k8s/
+    ├── namespace.yml
+    ├── auth-service/
+    │   ├── deployment.yml
+    │   ├── service.yml
+    │   ├── configmap.yml
+    │   └── secret.yml
+    ├── catalog-service/
+    │   ├── deployment.yml
+    │   ├── service.yml
+    │   └── ...
+    ├── booking-service/
+    │   └── ...
+    ├── notification-service/
+    │   └── ...
+    ├── api-gateway/
+    │   ├── deployment.yml
+    │   ├── service.yml       # type: LoadBalancer
+    │   └── ingress.yml
+    ├── postgres/
+    │   ├── statefulset.yml
+    │   └── pvc.yml
+    ├── redis/
+    │   └── deployment.yml
+    ├── elk/
+    │   ├── elasticsearch-statefulset.yml
+    │   ├── logstash-deployment.yml
+    │   └── kibana-deployment.yml
+    └── monitoring/
+        ├── prometheus-config.yml
+        └── grafana-deployment.yml
+```
+
+### Verification
+
+- `kubectl apply -f k8s/ --recursive`
+- All pods reach `Running` state
+- `kubectl port-forward svc/api-gateway 8080:8080` → frontend works
+- Logs flow to Kibana, metrics to Grafana
+- Scale: `kubectl scale deployment booking-service --replicas=3` → works
+
+---
+
+## Phase 7 — Dashboards + Alerting
+
+**Goal**: Production-grade visibility and automated alerts.
+
+### Kibana Dashboards (Logs)
+
+| Dashboard | Purpose | Filters |
+|---|---|---|
+| **Error Overview** | All ERROR logs across services, grouped by service | `level:ERROR`, split by `service` |
+| **Request Trace** | Follow a single request across all services | Filter by `traceId` |
+| **Booking Flow** | Booking lifecycle: initiate → lock → confirm → notify | `service:booking-service` + `service:notification-service` |
+| **Auth Activity** | Login attempts, failures, registration trends | `service:auth-service`, `message:*login*` |
+
+### Grafana Dashboards (Metrics)
+
+| Dashboard | Data Source | Panels |
+|---|---|---|
+| **JVM Overview** | Prometheus | Heap usage, GC pauses, thread count per service |
+| **RED Metrics** | Prometheus | Request Rate, Error Rate, Duration (p50/p95/p99) per endpoint |
+| **Database Pool** | Prometheus | HikariCP active/idle connections per service |
+| **Redis** | Prometheus | Active seat locks, connection pool, command latency |
+
+### Alerting (No Custom Service Needed)
+
+| Alert | Tool | Trigger |
+|---|---|---|
+| Service down | Prometheus Alertmanager | `up == 0` for any service for > 30s |
+| Error rate spike | Prometheus Alertmanager | `rate(http_server_requests_seconds_count{status=~"5.."}[5m]) > 0.05` |
+| Booking failures | Grafana Alert | Payment verify errors > 3 in 5 min |
+| Log error flood | Kibana Alerting | > 10 ERROR logs from any single service in 1 min |
+| Disk space | Prometheus Alertmanager | Elasticsearch disk usage > 80% |
+
+---
+
+## Port Mapping (Final State)
+
+| Service | Host Port | Container Port |
+|---|---|---|
+| **API Gateway** | `8080` | `8080` |
+| **auth-service** | `8081` | `8081` |
+| **catalog-service** | `8082` | `8082` |
+| **booking-service** | `8083` | `8083` |
+| **notification-service** | `8084` | `8084` |
+| **Config Server** | `8888` | `8888` |
+| **Jenkins** | `8085` | `8080` |
+| **PostgreSQL (auth-db)** | `5433` | `5432` |
+| **PostgreSQL (catalog-db)** | `5434` | `5432` |
+| **PostgreSQL (booking-db)** | `5435` | `5432` |
+| **Redis** | `6379` | `6379` |
+| **Elasticsearch** | `9200` | `9200` |
+| **Logstash (TCP)** | `5000` | `5000` |
+| **Logstash (Beats)** | `5044` | `5044` |
+| **Kibana** | `5601` | `5601` |
+| **Prometheus** | `9070` | `9090` |
+| **Grafana** | `3030` | `3000` |
+| **pgAdmin** | `5050` | `80` |
+| **Frontend (Nginx)** | `80` | `80` |
+
+---
+
+## Progress Tracker
+
+| Phase | Status | Key Deliverable |
+|---|---|---|
+| Phase 0 — Monolith + Prometheus | ✅ Done | Actuator endpoints, integration tests pass |
+| Phase 1 — ELK on Monolith | ⬜ Not Started | Kibana shows structured logs from monolith |
+| Phase 2 — Full Dockerization | ⬜ Not Started | `docker compose up` runs entire app |
+| Phase 3 — Jenkins CI/CD | ⬜ Not Started | Push-triggered pipeline builds + pushes images |
+| Phase 4 — Microservices Split | ⬜ Not Started | 4 independent services, each with own DB |
+| Phase 5 — Config + Gateway | ⬜ Not Started | Frontend calls one URL, config centralized |
+| Phase 6 — Kubernetes | ⬜ Not Started | All services running in K8s cluster |
+| Phase 7 — Dashboards + Alerting | ⬜ Not Started | Full operational visibility, automated alerts |

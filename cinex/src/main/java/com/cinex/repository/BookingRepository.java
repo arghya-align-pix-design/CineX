@@ -2,10 +2,12 @@ package com.cinex.repository;
 
 import com.cinex.entity.Booking;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
+import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -13,6 +15,16 @@ import java.util.Optional;
 public interface BookingRepository extends JpaRepository<Booking, Long> {
     List<Booking> findByUserId(Long userId);
     Optional<Booking> findByBookingRef(String bookingRef);
+
+    /**
+     * Acquires a Postgres SELECT ... FOR UPDATE row lock on the Booking.
+     * Used during confirmBooking/cancelBooking to prevent race conditions
+     * where two requests try to transition the same booking simultaneously.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM Booking b WHERE b.bookingRef = :ref")
+    Optional<Booking> findByBookingRefWithLock(@Param("ref") String ref);
+
     Optional<Booking> findByRazorpayOrderId(String razorpayOrderId);
     List<Booking> findByStatusAndCreatedAtBefore(
         Booking.BookingStatus status, 

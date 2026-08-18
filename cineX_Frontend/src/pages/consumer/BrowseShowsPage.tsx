@@ -1,12 +1,13 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../existing/context/AuthContext'
-import { fetchMovies, type Movie } from '../../services/consumerApi'
+import { fetchMovies, searchShows, type Movie, type ShowResponse } from '../../services/consumerApi'
 import { useCity, CITIES } from '../../hooks/useCity'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { MapPin, Loader2, LocateFixed } from 'lucide-react'
+import { MapPin, Loader2, LocateFixed, Search } from 'lucide-react'
+import DemoBanner from '../../components/DemoBanner'
 const GENRES: Movie['genre'][] = ['ACTION', 'COMEDY', 'HORROR', 'DRAMA', 'THRILLER', 'ROMANCE', 'SCIFI', 'ANIMATION']
 const LANGUAGES: Movie['language'][] = ['HINDI', 'ENGLISH', 'TELUGU', 'TAMIL', 'KANNADA', 'MALAYALAM', 'BENGALI']
 
@@ -15,7 +16,9 @@ export default function BrowseShowsPage() {
   const navigate = useNavigate()
 
   const [movies, setMovies] = useState<Movie[]>([])
+  const [showsInCity, setShowsInCity] = useState<ShowResponse[]>([])
   const [loading, setLoading] = useState(true)
+  const [, setCityLoading] = useState(false)
   const [error, setError] = useState('')
 
   // City detection (GPS + manual)
@@ -43,6 +46,25 @@ export default function BrowseShowsPage() {
     loadData()
   }, [])
 
+  useEffect(() => {
+    async function loadShows() {
+      try {
+        setCityLoading(true)
+        const data = await searchShows({ city: selectedCity })
+        setShowsInCity(data)
+      } catch (err) {
+        console.error('Failed to load shows in city:', err)
+      } finally {
+        setCityLoading(false)
+      }
+    }
+    loadShows()
+  }, [selectedCity])
+
+  const showingMovieIds = useMemo(() => {
+    return new Set(showsInCity.map(s => s.movieId))
+  }, [showsInCity])
+
   // Filtered movies
   const filteredMovies = useMemo(() => {
     return movies.filter((m) => {
@@ -50,14 +72,17 @@ export default function BrowseShowsPage() {
                             m.description.toLowerCase().includes(search.toLowerCase())
       const matchesGenre = selectedGenre ? m.genre === selectedGenre : true
       const matchesLanguage = selectedLanguage ? m.language === selectedLanguage : true
-      return matchesSearch && matchesGenre && matchesLanguage && m.isActive
+      
+      const isAvailableInCity = search.trim() === '' ? showingMovieIds.has(m.id) : true
+      
+      return matchesSearch && matchesGenre && matchesLanguage && m.isActive && isAvailableInCity
     })
-  }, [movies, search, selectedGenre, selectedLanguage])
+  }, [movies, search, selectedGenre, selectedLanguage, showingMovieIds])
 
-  // Featured Movie (first active movie)
+  // Featured Movie
   const featuredMovie = useMemo(() => {
-    return movies.find((m) => m.isActive)
-  }, [movies])
+    return movies.find((m) => m.isActive && showingMovieIds.has(m.id)) || movies.find((m) => m.isActive)
+  }, [movies, showingMovieIds])
 
   const handleLogout = () => {
     logout()
@@ -66,6 +91,7 @@ export default function BrowseShowsPage() {
 
   return (
     <div className="min-h-screen bg-[#0D0D0F] text-[#f5f0e8] font-sans">
+      <DemoBanner />
       {/* Navbar */}
       <nav className="border-b border-[#222224] bg-[#111113]/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -97,7 +123,7 @@ export default function BrowseShowsPage() {
                   {/* GPS Detection Button */}
                   <button
                     onClick={() => {
-                      requestGpsDetection()
+                      requestGpsDetection(true)
                       setShowCityDropdown(false)
                     }}
                     className="w-full text-left px-4 py-2.5 text-xs text-indigo-400 hover:bg-indigo-500/10 transition-colors flex items-center gap-2 border-b border-[#222224] font-semibold cursor-pointer"
@@ -192,12 +218,6 @@ export default function BrowseShowsPage() {
                     <span className="bg-[#1C1C1F] border border-[#2a2a2a] px-2 py-0.5 rounded font-medium">{featuredMovie.language}</span>
                     <span className="text-zinc-500">•</span>
                     <span>⏱ {featuredMovie.durationMins} mins</span>
-                    {featuredMovie.is3D && (
-                      <>
-                        <span className="text-zinc-500">•</span>
-                        <span className="text-[#E8B84B] font-semibold">3D AVAILABLE</span>
-                      </>
-                    )}
                   </div>
 
                   <Button 
@@ -218,14 +238,15 @@ export default function BrowseShowsPage() {
                   Now Showing in {selectedCity}
                 </h2>
 
-                <div className="w-full md:w-80">
+                 <div className="w-full md:w-80 relative">
                   <Input 
                     type="search" 
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search movies by title..." 
-                    className="bg-[#111113] border-[#222224] text-[#f5f0e8] placeholder:text-zinc-600 focus-visible:border-[#E8B84B] focus-visible:ring-[#E8B84B]/10 h-10 rounded-lg px-4"
+                    className="bg-[#111113] border-[#222224] text-[#f5f0e8] placeholder:text-zinc-600 focus-visible:border-[#E8B84B] focus-visible:ring-[#E8B84B]/10 h-10 rounded-lg pl-10 pr-4 w-full"
                   />
+                  <Search className="absolute left-3.5 top-3 w-4 h-4 text-zinc-500" />
                 </div>
               </div>
 
@@ -313,11 +334,6 @@ export default function BrowseShowsPage() {
                         <span className="text-[9px] font-bold bg-[#0D0D0F]/90 backdrop-blur border border-[#222224] text-zinc-300 px-2 py-0.5 rounded">
                           {m.language}
                         </span>
-                        {m.is3D && (
-                          <span className="text-[9px] font-bold bg-[#E8B84B]/95 text-[#0D0D0F] px-2 py-0.5 rounded shadow-sm">
-                            3D
-                          </span>
-                        )}
                       </div>
                     </div>
 

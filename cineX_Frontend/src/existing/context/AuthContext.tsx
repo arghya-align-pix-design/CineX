@@ -1,56 +1,91 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react'
-import api, { setAuthToken } from '../api/axios'
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  type ReactNode,
+} from 'react'
+import { setToken } from '../api/axios'
 
-const AuthContext = createContext(null)
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+type Role = 'CONSUMER' | 'VENDOR' | 'ADMIN'
 
-type User = {
-  id: number
+interface User {
   email: string
-  role: 'CONSUMER' | 'VENDOR' | 'ADMIN'
+  role: Role
+  demoMode?: boolean
 }
 
-type AuthContextType = {
+interface AuthContextType {
   token: string | null
   user: User | null
-  login: (email: string, password: string) => Promise<string>
+  demoMode: boolean
+  login: (token: string, user: User) => void
   logout: () => void
 }
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken]   = useState(null)
-  const [user,  setUser]    = useState<User | null>(null) // { id, email, role: 'CONSUMER'|'VENDOR'|'ADMIN' }
+// ---------------------------------------------------------------------------
+// Context
+// ---------------------------------------------------------------------------
+const AuthContext = createContext<AuthContextType | null>(null)
 
-  // Keep Axios interceptor in sync whenever token changes
-  useEffect(() => { setAuthToken(token) }, [token])
+// ---------------------------------------------------------------------------
+// Provider
+// ---------------------------------------------------------------------------
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [token, setTokenState] = useState<string | null>(() => {
+    return localStorage.getItem('cinex_token')
+  })
+  const [user, setUser] = useState<User | null>(() => {
+    const savedUser = localStorage.getItem('cinex_user')
+    if (savedUser) {
+      try {
+        return JSON.parse(savedUser)
+      } catch {
+        return null
+      }
+    }
+    return null
+  })
+  const [demoMode, setDemoMode] = useState<boolean>(() => {
+    return localStorage.getItem('cinex_demo_mode') === 'true'
+  })
 
-  // Listen for 401 events fired by Axios interceptor
-  useEffect(() => {
-    const handle = () => { setToken(null); setUser(null) }
-    window.addEventListener('cinex:unauthorized', handle)
-    return () => window.removeEventListener('cinex:unauthorized', handle)
-  }, [])
-
-  const login = useCallback(async (email, password) => {
-    const { data } = await api.post('/auth/login', { email, password })
-    setToken(data.token)
-    setUser({ id: data.userId, email: data.email, role: data.role })
-    return data.role
+  const login = useCallback((tok: string, u: User) => {
+    setToken(tok)          // sync Axios interceptor
+    setTokenState(tok)
+    setUser(u)
+    const isDemo = u.demoMode === true
+    setDemoMode(isDemo)
+    localStorage.setItem('cinex_token', tok)
+    localStorage.setItem('cinex_user', JSON.stringify(u))
+    localStorage.setItem('cinex_demo_mode', String(isDemo))
   }, [])
 
   const logout = useCallback(() => {
-    setToken(null)
+    setToken(null)         // sync Axios interceptor
+    setTokenState(null)
     setUser(null)
+    setDemoMode(false)
+    localStorage.removeItem('cinex_token')
+    localStorage.removeItem('cinex_user')
+    localStorage.removeItem('cinex_demo_mode')
   }, [])
 
   return (
-    <AuthContext.Provider value={{ token, user, login, logout }}>
+    <AuthContext.Provider value={{ token, user, demoMode, login, logout }}>
       {children}
     </AuthContext.Provider>
   )
 }
 
-export const useAuth = () => {
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
+export function useAuth(): AuthContextType {
   const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used inside AuthProvider')
+  if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>')
   return ctx
 }

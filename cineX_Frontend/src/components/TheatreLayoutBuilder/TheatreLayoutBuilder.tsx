@@ -21,6 +21,7 @@ function SeatCell({
   onPvSelect,
   rowLabel,
   colIdx,
+  displayNum,
 }: {
   seat: Seat
   mode: 'edit' | 'preview'
@@ -32,6 +33,7 @@ function SeatCell({
   onPvSelect: () => void
   rowLabel: string
   colIdx: number
+  displayNum: number | null
 }) {
   const cfg = SEAT_CONFIG[seat.type]
   const dark = useDarkMode()
@@ -78,7 +80,7 @@ function SeatCell({
         }}
         className="relative flex items-end justify-center pointer-events-none"
       >
-        <span className="text-[7.5px] opacity-[0.4] leading-none pb-[3px] font-semibold">{colIdx + 1}</span>
+        <span className="text-[7.5px] opacity-[0.4] leading-none pb-[3px] font-semibold">{displayNum}</span>
       </div>
     )
   }
@@ -88,7 +90,7 @@ function SeatCell({
       role="button"
       tabIndex={0}
       aria-pressed={mode === 'edit' ? isEditSelected : isPvSelected}
-      aria-label={`${seat.type} seat ${colIdx + 1}, row ${rowLabel}`}
+      aria-label={`${seat.type} seat ${displayNum}, row ${rowLabel}`}
       onClick={() => (mode === 'edit' ? onToggleSelect() : onPvSelect())}
       onKeyDown={(e) => {
         if (e.key === 'Enter') mode === 'edit' ? onToggleSelect() : onPvSelect()
@@ -105,7 +107,7 @@ function SeatCell({
       }}
       className="relative flex items-end justify-center cursor-pointer transition-all duration-150 group/seat select-none hover:brightness-[1.12] hover:scale-105 shadow-sm"
     >
-      <span className="text-[7.5px] opacity-[0.4] leading-none pb-[3px] font-semibold">{colIdx + 1}</span>
+      <span className="text-[7.5px] opacity-[0.4] leading-none pb-[3px] font-semibold">{displayNum}</span>
       {mode === 'edit' && (
         <button
           onClick={(e) => {
@@ -213,6 +215,7 @@ function RowRenderer({
   zones: Zone[]
   onRowZoneChange: (id: number, zoneType: string) => void
 }) {
+  const [isOpen, setIsOpen] = useState(false)
   const label = row.rowLabel
   const rowH = row.seats.some((s) => !s.removed && s.type === 'RECLINER') ? 44 : 26
 
@@ -221,25 +224,58 @@ function RowRenderer({
 
   const rowZone = zones.find((z) => z.type === row.zone)
 
+  // Compute sequential seat numbers for non-removed seats
+  let activeSeatCount = 0
+  const seatNumbers = row.seats.map(s => {
+    if (s.removed) return null
+    activeSeatCount++
+    return activeSeatCount
+  })
+
   return (
     <div className="flex items-center group/row py-0.5">
       {/* Row Label / Selector */}
       {mode === 'edit' ? (
         <div className="flex items-center gap-1.5 w-16 shrink-0 pr-2 justify-end">
           {/* Row Zone Color Dot Indicator / Selector Dropdown */}
-          <select
-            value={row.zone}
-            onChange={(e) => onRowZoneChange(row.id, e.target.value)}
-            className="w-3.5 h-3.5 rounded-full border border-border cursor-pointer text-[0px] focus:outline-none focus:ring-1 focus:ring-ring shrink-0 shadow-sm"
-            style={{ backgroundColor: rowZone?.color ?? '#CCCCCC' }}
-            title={`Change row zone (Current: ${rowZone?.name || row.zone})`}
-          >
-            {zones.map((z) => (
-              <option key={z.type} value={z.type}>
-                {z.name}
-              </option>
-            ))}
-          </select>
+          <div className="relative shrink-0 flex items-center">
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              className="w-3.5 h-3.5 rounded-full border border-border cursor-pointer shrink-0 shadow-sm transition-transform active:scale-95"
+              style={{ backgroundColor: rowZone?.color ?? '#CCCCCC' }}
+              title={`Change row zone (Current: ${rowZone?.name || row.zone})`}
+            />
+            {isOpen && (
+              <>
+                {/* Backdrop overlay to close when clicking outside */}
+                <div 
+                  className="fixed inset-0 z-40 cursor-default" 
+                  onClick={() => setIsOpen(false)} 
+                />
+                <div className="absolute right-0 top-full mt-1.5 w-40 bg-[#161618] border border-border rounded-lg shadow-xl z-50 py-1 flex flex-col animate-in fade-in slide-in-from-top-2 duration-150">
+                  <div className="px-2.5 py-1 text-[10px] font-bold text-zinc-500 border-b border-border/40 uppercase tracking-wider mb-1">
+                    Select Row Zone
+                  </div>
+                  {zones.map((z) => (
+                    <button
+                      key={z.type}
+                      onClick={() => {
+                        onRowZoneChange(row.id, z.type)
+                        setIsOpen(false)
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 text-xs text-zinc-300 hover:bg-primary/10 hover:text-primary flex items-center gap-2 cursor-pointer transition-colors ${row.zone === z.type ? 'bg-primary/5 text-primary font-bold' : ''}`}
+                    >
+                      <span 
+                        className="w-2.5 h-2.5 rounded-full border border-zinc-700 shrink-0" 
+                        style={{ backgroundColor: z.color }} 
+                      />
+                      <span className="truncate">{z.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
 
           <button
             onClick={() => onSelectRow(row.id)}
@@ -282,6 +318,7 @@ function RowRenderer({
               onPvSelect={() => onPvSelect(seat.id)}
               rowLabel={label}
               colIdx={si}
+              displayNum={seatNumbers[si]}
             />
           </div>
         ))}
@@ -546,6 +583,84 @@ export default function TheatreLayoutBuilder({
                 <Button variant="outline" size="sm" onClick={removeColumn} className="h-8 text-xs font-semibold">
                   － Column
                 </Button>
+              </div>
+            </div>
+
+            <Separator className="bg-border/60" />
+
+            <div>
+              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2.5">Aisles & Walkways</h3>
+              <div className="space-y-3">
+                {/* Vertical Aisles */}
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-semibold text-muted-foreground">Vertical Aisles:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Array.from(colAisles).sort((a,b) => a-b).map((colIdx) => (
+                      <span key={colIdx} className="inline-flex items-center gap-1 bg-[#1C1C1F] border border-border px-2 py-0.5 rounded text-[10px] font-mono text-foreground">
+                        After Col {colIdx + 1}
+                        <button onClick={() => toggleAisle(colIdx)} className="text-destructive hover:text-red-400 font-bold ml-1 cursor-pointer">×</button>
+                      </span>
+                    ))}
+                    {colAisles.size === 0 && <span className="text-[10px] text-zinc-500 italic">None</span>}
+                  </div>
+                  <div className="flex gap-1.5 mt-1">
+                    <select
+                      onChange={(e) => {
+                        const val = Number(e.target.value)
+                        if (!isNaN(val)) {
+                          toggleAisle(val)
+                          e.target.value = ""
+                        }
+                      }}
+                      className="w-full text-xs bg-[#1C1C1F] border border-border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring text-foreground"
+                      defaultValue=""
+                    >
+                      <option value="" disabled>+ Add vertical aisle...</option>
+                      {Array.from({ length: layout[0]?.seats.length - 1 || 0 }, (_, i) => (
+                        <option key={i} value={i} disabled={colAisles.has(i)} className="bg-[#1C1C1F] text-foreground">
+                          After Column {i + 1}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Horizontal Walkways */}
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-semibold text-muted-foreground">Horizontal Walkways:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Array.from(rowAisles).sort((a,b) => a-b).map((rowIdx) => {
+                      const label = layout[rowIdx]?.rowLabel || `Index ${rowIdx}`
+                      return (
+                        <span key={rowIdx} className="inline-flex items-center gap-1 bg-[#1C1C1F] border border-border px-2 py-0.5 rounded text-[10px] font-mono text-foreground">
+                          After Row {label}
+                          <button onClick={() => toggleRowAisle(rowIdx)} className="text-destructive hover:text-red-400 font-bold ml-1 cursor-pointer">×</button>
+                        </span>
+                      )
+                    })}
+                    {rowAisles.size === 0 && <span className="text-[10px] text-zinc-500 italic">None</span>}
+                  </div>
+                  <div className="flex gap-1.5 mt-1">
+                    <select
+                      onChange={(e) => {
+                        const val = Number(e.target.value)
+                        if (!isNaN(val)) {
+                          toggleRowAisle(val)
+                          e.target.value = ""
+                        }
+                      }}
+                      className="w-full text-xs bg-[#1C1C1F] border border-border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring text-foreground"
+                      defaultValue=""
+                    >
+                      <option value="" disabled>+ Add horizontal walkway...</option>
+                      {layout.map((row, ri) => (
+                        <option key={row.id} value={ri} disabled={rowAisles.has(ri)} className="bg-[#1C1C1F] text-foreground">
+                          After Row {row.rowLabel}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
             </div>
 

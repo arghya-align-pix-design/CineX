@@ -12,6 +12,8 @@ export default function AdminSetupPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [totpSecret, setTotpSecret] = useState('')
+  const [qrCodeDataUri, setQrCodeDataUri] = useState('')
+  const [showManualKey, setShowManualKey] = useState(false)
 
   const set = (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [field]: e.target.value }))
@@ -25,19 +27,14 @@ export default function AdminSetupPage() {
     setError('')
     setLoading(true)
     try {
-      // POST /admin/setup
-      // Returns a string containing the TOTP secret key
-      const { data } = await api.post<string>('/admin/setup', {
+      // POST /admin/setup returns { secret, qrCodeDataUri }
+      const { data } = await api.post<{ secret: string; qrCodeDataUri: string }>('/admin/setup', {
         email: form.email,
         password: form.password,
       })
 
-      // The response payload should contain the secret
-      // (e.g. "Admin setup complete. Secret: JBSWY3DPEHPK3PXP")
-      // Let's parse out the Base32 code or show the raw response
-      const match = data.match(/Secret:\s*([A-Z2-7]+)/i)
-      const secret = match ? match[1] : data
-      setTotpSecret(secret)
+      setTotpSecret(data.secret)
+      setQrCodeDataUri(data.qrCodeDataUri)
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } | string } }
       const msg =
@@ -76,21 +73,43 @@ export default function AdminSetupPage() {
         <CardContent className="space-y-4 pt-4">
           {totpSecret ? (
             <div className="space-y-5">
-              <div className="bg-[#0D0D0F] border border-[#2a2a2a] rounded-lg p-4 text-center">
-                <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold mb-2">
-                  Base32 Secret Code
+              {/* QR Code Image */}
+              <div className="bg-[#0D0D0F] border border-[#2a2a2a] rounded-lg p-4 flex flex-col items-center gap-3">
+                <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">
+                  Scan with Authenticator App
                 </div>
-                <div className="font-mono text-base font-bold text-[#E8B84B] tracking-wider break-all select-all">
-                  {totpSecret}
-                </div>
+                {qrCodeDataUri && (
+                  <img
+                    src={qrCodeDataUri}
+                    alt="TOTP QR Code"
+                    className="w-[200px] h-[200px] rounded-lg bg-white p-2"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowManualKey(!showManualKey)}
+                  className="text-[10px] text-zinc-500 hover:text-[#E8B84B] transition-colors cursor-pointer underline"
+                >
+                  {showManualKey ? 'Hide manual key' : "Can't scan? Enter key manually"}
+                </button>
+                {showManualKey && (
+                  <div className="w-full bg-[#111113] border border-[#222224] rounded-lg p-3 text-center">
+                    <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold mb-1">
+                      Base32 Secret Code
+                    </div>
+                    <div className="font-mono text-sm font-bold text-[#E8B84B] tracking-wider break-all select-all">
+                      {totpSecret}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2.5 text-xs text-zinc-400 bg-[#0D0D0F]/40 border border-[#222224] rounded-lg p-4">
                 <div className="font-semibold text-zinc-300">How to register in Authenticator:</div>
                 <p>1. Open Google Authenticator or any MFA app.</p>
-                <p>2. Tap the "+" button and choose "Enter a setup key".</p>
-                <p>3. Set the Account name to <code className="text-[#E8B84B]">CineX Admin</code>.</p>
-                <p>4. Paste the secret key shown above and select "Time-based".</p>
+                <p>2. Tap the "+" button and choose "Scan a QR code".</p>
+                <p>3. Point your camera at the QR code above.</p>
+                <p>4. A <code className="text-[#E8B84B]">CineX</code> entry will appear automatically.</p>
               </div>
 
               <Button

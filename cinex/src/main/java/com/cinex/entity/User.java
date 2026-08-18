@@ -22,8 +22,18 @@ public class User {
     @Column(unique = true, nullable = false)
     private String email;
 
-    @Column(nullable = false)
+    @Column
+    private String name;
+
+    @Column(nullable = true)
     private String passwordHash;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private AuthProvider provider = AuthProvider.LOCAL;
+
+    @Column
+    private String providerId;
 
     @Enumerated(EnumType.STRING)
     private Role role;

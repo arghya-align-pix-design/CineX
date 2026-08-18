@@ -20,7 +20,8 @@ import {
   PlusCircle,
   Mail,
   MessageSquare,
-  Send
+  Send,
+  FileText
 } from 'lucide-react'
 import {
   fetchVendors,
@@ -35,11 +36,13 @@ import {
   createMovie,
   updateMovie,
   toggleMovieActive,
+  fetchAuditLogs,
   type VendorResponse,
   type BannedVendor,
   type PlatformStats,
   type Movie,
-  type MovieRequest
+  type MovieRequest,
+  type AuditLog
 } from '../../services/adminApi'
 import {
   fetchInbox,
@@ -50,10 +53,12 @@ import {
   type MessageResponse
 } from '../../services/messageApi'
 
-type Tab = 'overview' | 'vendors' | 'movies' | 'banned' | 'inbox'
+import DemoBanner from '../../components/DemoBanner'
+
+type Tab = 'overview' | 'vendors' | 'movies' | 'banned' | 'inbox' | 'audit'
 
 export default function AdminDashboardPage() {
-  const { logout, user } = useAuth()
+  const { logout, user, demoMode } = useAuth()
   const navigate = useNavigate()
 
   const [activeTab, setActiveTab] = useState<Tab>('overview')
@@ -66,6 +71,8 @@ export default function AdminDashboardPage() {
   const [vendors, setVendors] = useState<VendorResponse[]>([])
   const [movies, setMovies] = useState<Movie[]>([])
   const [bannedList, setBannedList] = useState<BannedVendor[]>([])
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
+  const [auditActionFilter, setAuditActionFilter] = useState('')
 
   // Modal / Form States
   const [inviteEmail, setInviteEmail] = useState('')
@@ -121,6 +128,7 @@ export default function AdminDashboardPage() {
       let bData: BannedVendor[] = []
       let messagesData: MessageResponse[] = []
       let unreads = 0
+      let aData: AuditLog[] = []
       
       try {
         sData = await fetchPlatformStats()
@@ -128,8 +136,9 @@ export default function AdminDashboardPage() {
         bData = await fetchBannedVendors()
         messagesData = await fetchInbox()
         unreads = await fetchUnreadCount()
+        aData = await fetchAuditLogs()
       } catch (e) {
-        console.warn('Backend offline or database not seeded, using fallback mock stats/vendors/messages')
+        console.warn('Backend offline or database not seeded, using fallback mock stats/vendors/messages/audit')
         sData = {
           totalVendors: 3,
           activeVendors: 2,
@@ -168,9 +177,17 @@ export default function AdminDashboardPage() {
           localStorage.setItem('cinex_local_messages', JSON.stringify(messagesData))
         }
         unreads = messagesData.filter(m => !m.read && m.recipientEmail === 'admin@cinex.com').length
+
+        aData = [
+          { id: 1, action: 'VENDOR_BANNED', actorEmail: 'admin@cinex.com', targetType: 'VENDOR', targetId: 'scammer@cinex.com', details: 'Vendor banned permanently. Reason: Billing fraud', timestamp: new Date().toISOString() },
+          { id: 2, action: 'MOVIE_CREATED', actorEmail: 'admin@cinex.com', targetType: 'MOVIE', targetId: 'Inception', details: 'Movie Inception created in catalog', timestamp: new Date(Date.now() - 3600000).toISOString() },
+          { id: 3, action: 'BOOKING_CONFIRMED', actorEmail: 'user@cinex.com', targetType: 'BOOKING', targetId: 'CX-8A91B2C3', details: 'Booking CX-8A91B2C3 confirmed for 2 seats', timestamp: new Date(Date.now() - 7200000).toISOString() },
+          { id: 4, action: 'BOOKING_AUTO_CANCELLED', actorEmail: 'SYSTEM', targetType: 'BOOKING', targetId: 'CX-9F8E7D6C', details: 'Expired booking CX-9F8E7D6C auto-cancelled by background scheduler', timestamp: new Date(Date.now() - 14400000).toISOString() }
+        ]
       }
       setMessages(messagesData)
       setUnreadCount(unreads)
+      setAuditLogs(aData)
 
       // Load movies from localStorage (to allow offline local state testing)
       const localMovies = localStorage.getItem('cinex_local_movies')
@@ -479,6 +496,10 @@ export default function AdminDashboardPage() {
   }
 
   const handleSuspendVendor = async (id: number) => {
+    if (demoMode) {
+      setError('Data modification actions are disabled in Recruiter Demo Mode.')
+      return
+    }
     if (!confirm('Are you sure you want to suspend this vendor account? They won\'t be able to access the platform.')) return
     try {
       await suspendVendor(id)
@@ -858,7 +879,9 @@ export default function AdminDashboardPage() {
   )
 
   return (
-    <div className="min-h-screen bg-[#09090B] text-zinc-100 font-sans flex">
+    <div className="min-h-screen bg-[#09090B] text-zinc-100 font-sans flex flex-col">
+      <DemoBanner />
+      <div className="flex-1 flex relative">
       {/* Background Ambient Glow */}
       <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full bg-[#E8B84B]/3 blur-[140px] pointer-events-none z-0" />
 
@@ -946,6 +969,17 @@ export default function AdminDashboardPage() {
                   {unreadCount}
                 </span>
               )}
+            </button>
+            <button
+              onClick={() => setActiveTab('audit')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                activeTab === 'audit'
+                  ? 'bg-[#E8B84B]/10 text-[#E8B84B] border-l-2 border-[#E8B84B]'
+                  : 'text-zinc-400 hover:bg-zinc-800/40 hover:text-zinc-200'
+              }`}
+            >
+              <FileText size={18} />
+              System Audit Trail
             </button>
           </nav>
         </div>
@@ -1628,6 +1662,117 @@ export default function AdminDashboardPage() {
             </div>
           </div>
         )}
+
+        {/* Audit Log Tab */}
+        {!loading && activeTab === 'audit' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-zinc-100 flex items-center gap-2">
+                  <FileText className="text-[#E8B84B]" size={22} /> System Audit Trail
+                </h1>
+                <p className="text-zinc-400 text-sm mt-1">
+                  Immutable record of administrative operations, security enforcement, and sensitive business events.
+                </p>
+              </div>
+              <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 font-medium">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Async Logging Active
+              </div>
+            </div>
+
+            {/* Filter Bar */}
+            <div className="bg-[#121214] border border-zinc-800/80 rounded-xl p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
+              <div className="flex items-center gap-3 w-full md:w-auto flex-1">
+                <div className="relative flex-1 max-w-sm">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                  <input
+                    type="text"
+                    placeholder="Search by actor, target, or details..."
+                    value={auditActionFilter}
+                    onChange={(e) => setAuditActionFilter(e.target.value)}
+                    className="bg-[#09090B] border border-zinc-800 text-zinc-200 placeholder:text-zinc-600 rounded-lg pl-9 pr-4 py-2 text-sm w-full focus:outline-none focus:border-[#E8B84B]/60"
+                  />
+                </div>
+              </div>
+              <div className="text-xs text-zinc-500 font-medium">
+                Showing <b className="text-zinc-300">{auditLogs.length}</b> total audit entries
+              </div>
+            </div>
+
+            {/* Audit Logs Table */}
+            <div className="bg-[#121214] border border-zinc-800/80 rounded-xl overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-[#18181B] border-b border-zinc-800 text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+                      <th className="py-3.5 px-4">Timestamp</th>
+                      <th className="py-3.5 px-4">Action</th>
+                      <th className="py-3.5 px-4">Actor</th>
+                      <th className="py-3.5 px-4">Target Entity</th>
+                      <th className="py-3.5 px-4">Audit Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800/50 text-sm">
+                    {auditLogs
+                      .filter(log => {
+                        if (!auditActionFilter) return true
+                        const q = auditActionFilter.toLowerCase()
+                        return (
+                          log.action.toLowerCase().includes(q) ||
+                          log.actorEmail.toLowerCase().includes(q) ||
+                          (log.targetId && log.targetId.toLowerCase().includes(q)) ||
+                          (log.details && log.details.toLowerCase().includes(q))
+                        )
+                      })
+                      .map((entry) => {
+                        const isDanger = entry.action.includes('BANNED') || entry.action.includes('DELETED') || entry.action.includes('CANCELLED')
+                        const isWarning = entry.action.includes('SUSPENDED') || entry.action.includes('TOGGLED')
+                        const isSuccess = entry.action.includes('CONFIRMED') || entry.action.includes('CREATED') || entry.action.includes('REACTIVATED')
+
+                        return (
+                          <tr key={entry.id} className="hover:bg-zinc-800/30 transition-colors">
+                            <td className="py-3.5 px-4 text-xs font-mono text-zinc-400 whitespace-nowrap">
+                              {new Date(entry.timestamp).toLocaleString()}
+                            </td>
+                            <td className="py-3.5 px-4 whitespace-nowrap">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide ${
+                                isDanger ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                                isWarning ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                                isSuccess ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                                'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                              }`}>
+                                {entry.action}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 text-xs font-medium text-zinc-200 whitespace-nowrap">
+                              <span className={entry.actorEmail === 'SYSTEM' ? 'text-[#E8B84B] font-bold' : 'text-zinc-300'}>
+                                {entry.actorEmail}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 text-xs font-mono text-zinc-300 whitespace-nowrap">
+                              <span className="text-zinc-500 uppercase mr-1">{entry.targetType}:</span>
+                              <b>{entry.targetId}</b>
+                            </td>
+                            <td className="py-3.5 px-4 text-xs text-zinc-400 max-w-md truncate">
+                              {entry.details}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    {auditLogs.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-zinc-500 text-sm">
+                          No audit logs found matching criteria.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* COMPOSE MESSAGE MODAL FOR ADMIN */}
@@ -2074,6 +2219,7 @@ export default function AdminDashboardPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

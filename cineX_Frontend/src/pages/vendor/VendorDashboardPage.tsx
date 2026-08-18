@@ -27,6 +27,8 @@ import {
   createTheatre,
   createScreen,
   deleteScreen,
+  deleteShow,
+  updateShowEndDate,
   type VendorStats,
   type Theatre,
   type Screen,
@@ -42,11 +44,13 @@ import {
   type MessageResponse
 } from '../../services/messageApi'
 import TheatreLayoutBuilder from '../../components/TheatreLayoutBuilder'
+import { CITIES } from '../../hooks/useCity'
+import DemoBanner from '../../components/DemoBanner'
 
 type Tab = 'overview' | 'theatres' | 'scheduler' | 'inbox'
 
 export default function VendorDashboardPage() {
-  const { logout, user } = useAuth()
+  const { logout, user, demoMode } = useAuth()
   const navigate = useNavigate()
 
   const [activeTab, setActiveTab] = useState<Tab>('overview')
@@ -93,9 +97,13 @@ export default function VendorDashboardPage() {
     screenId: '',
     movieId: '',
     showDate: '',
+    endDate: '',
     showTime: '18:00',
     basePrice: 150
   })
+
+  const [editingShowId, setEditingShowId] = useState<number | null>(null)
+  const [editingEndDate, setEditingEndDate] = useState<string>('')
 
   // Messaging States
   const [activeMessageId, setActiveMessageId] = useState<number | null>(null)
@@ -284,6 +292,10 @@ export default function VendorDashboardPage() {
   // Theatre Create
   const handleTheatreSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (demoMode) {
+      setError('Data modifications are disabled in Recruiter Demo Mode.')
+      return
+    }
     setError('')
     try {
       try {
@@ -406,7 +418,7 @@ export default function VendorDashboardPage() {
   const handleScheduleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!canSchedule) return
-    const { theatreId, screenId, movieId, showDate, showTime, basePrice } = schedulerForm
+    const { theatreId, screenId, movieId, showDate, endDate, showTime, basePrice } = schedulerForm
     if (!theatreId || !screenId || !movieId || !showDate || !showTime) {
       setError('Please fill out all fields')
       return
@@ -418,6 +430,7 @@ export default function VendorDashboardPage() {
         theatreId: parseInt(theatreId),
         screenId: parseInt(screenId),
         showDate,
+        endDate: endDate || undefined,
         showTime: `${showTime}:00`,
         basePrice: parseFloat(basePrice as any)
       }
@@ -444,6 +457,7 @@ export default function VendorDashboardPage() {
           theatre: selectedTheatre,
           screen: selectedScreen,
           showDate,
+          endDate: endDate || undefined,
           showTime: `${showTime}:00`,
           basePrice: parseFloat(basePrice as any),
           status: 'UPCOMING',
@@ -459,11 +473,61 @@ export default function VendorDashboardPage() {
       setSchedulerForm(prev => ({
         ...prev,
         showDate: '',
+        endDate: '',
         showTime: '18:00'
       }))
       loadData()
     } catch (err: any) {
       setError(err.message || 'Failed to schedule show')
+    }
+  }
+
+  const handleRemoveShow = async (showId: number) => {
+    if (!confirm('Are you sure you want to cancel and remove this show?')) return
+    setError('')
+    try {
+      try {
+        await deleteShow(showId)
+      } catch (apiErr) {
+        console.warn('API offline, removing show locally')
+        const localStr = localStorage.getItem('cinex_local_shows')
+        if (localStr) {
+          let localList: Show[] = JSON.parse(localStr)
+          localList = localList.filter(s => s.id !== showId)
+          localStorage.setItem('cinex_local_shows', JSON.stringify(localList))
+        }
+      }
+      setSuccess('Show successfully removed/cancelled')
+      loadData()
+    } catch (err: any) {
+      setError(err.message || 'Failed to remove show')
+    }
+  }
+
+  const handleUpdateEndDate = async (showId: number) => {
+    if (!editingEndDate) {
+      setError('Please choose a valid end date')
+      return
+    }
+    setError('')
+    try {
+      try {
+        await updateShowEndDate(showId, editingEndDate)
+      } catch (apiErr) {
+        console.warn('API offline, updating show endDate locally')
+        const localStr = localStorage.getItem('cinex_local_shows')
+        if (localStr) {
+          let localList: Show[] = JSON.parse(localStr)
+          localList = localList.map(s => s.id === showId ? { ...s, endDate: editingEndDate } : s)
+          localStorage.setItem('cinex_local_shows', JSON.stringify(localList))
+        }
+      }
+      setSuccess('Show end date updated successfully')
+      setEditingShowId(null)
+      setEditingEndDate('')
+      loadData()
+    } catch (err: any) {
+      setError(err.message || 'Failed to update end date')
     }
   }
 
@@ -578,7 +642,9 @@ export default function VendorDashboardPage() {
 
 
   return (
-    <div className="min-h-screen bg-[#09090B] text-zinc-100 font-sans flex">
+    <div className="min-h-screen bg-[#09090B] text-zinc-100 font-sans flex flex-col">
+      <DemoBanner />
+      <div className="flex-1 flex relative">
       {/* Background Ambient Glow */}
       <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full bg-[#E8B84B]/3 blur-[140px] pointer-events-none z-0" />
 
@@ -991,17 +1057,30 @@ export default function VendorDashboardPage() {
                       </select>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-3">
                       <div>
                         <label className="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">
-                          Show Date
+                          Start Date
                         </label>
                         <input
                           type="date"
                           value={schedulerForm.showDate}
                           onChange={(e) => setSchedulerForm(prev => ({ ...prev, showDate: e.target.value }))}
-                          className="bg-[#09090B] border border-zinc-800 text-zinc-200 rounded-lg p-2.5 w-full text-sm focus:outline-none focus:border-[#E8B84B]/60 text-center"
+                          className="bg-[#09090B] border border-zinc-800 text-zinc-200 rounded-lg p-2 w-full text-xs focus:outline-none focus:border-[#E8B84B]/60 text-center"
                           required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wide">
+                          End Date (Opt)
+                        </label>
+                        <input
+                          type="date"
+                          value={schedulerForm.endDate}
+                          min={schedulerForm.showDate}
+                          onChange={(e) => setSchedulerForm(prev => ({ ...prev, endDate: e.target.value }))}
+                          className="bg-[#09090B] border border-zinc-800 text-zinc-200 rounded-lg p-2 w-full text-xs focus:outline-none focus:border-[#E8B84B]/60 text-center"
                         />
                       </div>
 
@@ -1013,7 +1092,7 @@ export default function VendorDashboardPage() {
                           type="time"
                           value={schedulerForm.showTime}
                           onChange={(e) => setSchedulerForm(prev => ({ ...prev, showTime: e.target.value }))}
-                          className="bg-[#09090B] border border-zinc-800 text-zinc-200 rounded-lg p-2.5 w-full text-sm focus:outline-none focus:border-[#E8B84B]/60 text-center"
+                          className="bg-[#09090B] border border-zinc-800 text-zinc-200 rounded-lg p-2 w-full text-xs focus:outline-none focus:border-[#E8B84B]/60 text-center"
                           required
                         />
                       </div>
@@ -1080,12 +1159,13 @@ export default function VendorDashboardPage() {
                           <th className="p-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Date & Time</th>
                           <th className="p-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Tickets Sold</th>
                           <th className="p-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Status</th>
+                          <th className="p-4 text-xs font-bold text-zinc-400 uppercase tracking-wider text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-800/50 text-sm">
                         {shows.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="p-8 text-center text-zinc-500">
+                            <td colSpan={6} className="p-8 text-center text-zinc-500">
                               No shows scheduled yet. Populate using the form.
                             </td>
                           </tr>
@@ -1103,8 +1183,55 @@ export default function VendorDashboardPage() {
                                 </div>
                               </td>
                               <td className="p-4">
-                                <div className="text-zinc-200">{show.showDate}</div>
-                                <div className="text-[11px] text-zinc-500 mt-0.5">{show.showTime}</div>
+                                {editingShowId === show.id ? (
+                                  <div className="flex flex-col gap-1.5 max-w-[140px]">
+                                    <div className="text-[10px] text-zinc-400 font-semibold uppercase">Edit End Date</div>
+                                    <input
+                                      type="date"
+                                      value={editingEndDate}
+                                      min={show.showDate}
+                                      onChange={(e) => setEditingEndDate(e.target.value)}
+                                      className="bg-[#09090B] border border-zinc-800 text-zinc-200 rounded p-1 w-full text-xs focus:outline-none focus:border-[#E8B84B]/60 text-center"
+                                    />
+                                    <div className="flex gap-2 justify-end">
+                                      <button
+                                        onClick={() => handleUpdateEndDate(show.id)}
+                                        className="p-1 text-emerald-400 hover:text-emerald-300 transition-colors bg-emerald-500/10 rounded cursor-pointer"
+                                        title="Save End Date"
+                                      >
+                                        <Check size={12} />
+                                      </button>
+                                      <button
+                                        onClick={() => { setEditingShowId(null); setEditingEndDate(''); }}
+                                        className="p-1 text-rose-400 hover:text-rose-300 transition-colors bg-rose-500/10 rounded cursor-pointer"
+                                        title="Cancel"
+                                      >
+                                        <X size={12} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <div className="text-zinc-200">
+                                      {show.endDate ? `${show.showDate} to ${show.endDate}` : show.showDate}
+                                    </div>
+                                    <div className="text-[11px] text-zinc-500 mt-0.5 flex items-center gap-1.5">
+                                      <span>{show.showTime}</span>
+                                      {show.status !== 'COMPLETED' && show.status !== 'CANCELLED' && (
+                                        <button
+                                          onClick={() => {
+                                            setEditingShowId(show.id)
+                                            setEditingEndDate(show.endDate || show.showDate)
+                                          }}
+                                          className="text-[#E8B84B] hover:text-[#E8B84B]/80 hover:underline transition-all text-[10px] flex items-center gap-0.5 cursor-pointer ml-1"
+                                          title="Update End Date"
+                                        >
+                                          (Edit End)
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
                               </td>
                               <td className="p-4">
                                 <div className="font-semibold text-zinc-200">
@@ -1122,6 +1249,17 @@ export default function VendorDashboardPage() {
                                 }`}>
                                   {show.status}
                                 </span>
+                              </td>
+                              <td className="p-4 text-right">
+                                {show.status !== 'COMPLETED' && show.status !== 'CANCELLED' && (
+                                  <button
+                                    onClick={() => handleRemoveShow(show.id)}
+                                    className="p-1.5 text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all cursor-pointer"
+                                    title="Cancel & Remove Show"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           ))
@@ -1368,14 +1506,17 @@ export default function VendorDashboardPage() {
                 </div>
                 <div>
                   <label className="block text-[10px] font-semibold text-zinc-400 uppercase mb-1">City</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Bengaluru"
+                  <select
                     value={theatreForm.city}
                     onChange={(e) => setTheatreForm(prev => ({ ...prev, city: e.target.value }))}
                     className="bg-[#09090B] border border-zinc-800 text-zinc-200 rounded-lg px-3 py-2 w-full text-sm focus:outline-none focus:border-[#E8B84B]/60"
                     required
-                  />
+                  >
+                    <option value="">-- Choose City --</option>
+                    {CITIES.map(city => (
+                      <option key={city} value={city}>{city}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -1603,6 +1744,7 @@ export default function VendorDashboardPage() {
           }}
         />
       )}
+      </div>
     </div>
   )
 }

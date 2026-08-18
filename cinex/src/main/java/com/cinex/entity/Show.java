@@ -55,6 +55,9 @@ public class Show {
     @Column(nullable = false)
     private boolean isActive = true;
 
+    @Version
+    private long version = 0L;
+
     public enum ShowStatus {
         UPCOMING, LIVE, COMPLETED, CANCELLED
     }

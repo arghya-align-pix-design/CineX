@@ -14,16 +14,17 @@ export default function MovieDetailPage() {
 
   const [movie, setMovie] = useState<Movie | null>(null)
   const [shows, setShows] = useState<ShowResponse[]>([])
+  const [allMovieShows, setAllMovieShows] = useState<ShowResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   const { selectedCity, setSelectedCity, locationStatus, detectedCity, requestGpsDetection } = useCity()
   const [showCityDropdown, setShowCityDropdown] = useState(false)
 
-  // Generate 7 days starting today
+  // Generate 5 days starting today
   const dates = useMemo(() => {
     const arr = []
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 5; i++) {
       const d = new Date()
       d.setDate(d.getDate() + i)
       const dayName = d.toLocaleDateString('en-US', { weekday: 'short' })
@@ -61,12 +62,29 @@ export default function MovieDetailPage() {
     loadMovieAndShows()
   }, [movieId, selectedDate])
 
+  useEffect(() => {
+    if (!movieId) return
+    async function loadAllShows() {
+      try {
+        const data = await searchShows({ movieId: Number(movieId) })
+        setAllMovieShows(data)
+      } catch (err) {
+        console.error('Failed to load all shows:', err)
+      }
+    }
+    loadAllShows()
+  }, [movieId])
+
+  const hasShowsInCity = useMemo(() => {
+    return allMovieShows.some(s => s.city.toLowerCase() === selectedCity.toLowerCase())
+  }, [allMovieShows, selectedCity])
+
   // Filter shows running in the selected city
   const cityFilteredShows = useMemo(() => {
     return shows.filter(s => s.city.toLowerCase() === selectedCity.toLowerCase())
   }, [shows, selectedCity])
 
-  // Group shows by Theatre name
+  // Group shows by Theatre name and sort them chronologically by show time
   const groupedShows = useMemo(() => {
     const groups: { [theatreName: string]: ShowResponse[] } = {}
     cityFilteredShows.forEach(show => {
@@ -74,6 +92,10 @@ export default function MovieDetailPage() {
         groups[show.theatreName] = []
       }
       groups[show.theatreName].push(show)
+    })
+    // Sort shows within each theatre chronologically
+    Object.keys(groups).forEach(theatreName => {
+      groups[theatreName].sort((a, b) => a.showTime.localeCompare(b.showTime))
     })
     return groups
   }, [cityFilteredShows])
@@ -116,7 +138,7 @@ export default function MovieDetailPage() {
                   {/* GPS Detection Button */}
                   <button
                     onClick={() => {
-                      requestGpsDetection()
+                      requestGpsDetection(true)
                       setShowCityDropdown(false)
                     }}
                     className="w-full text-left px-4 py-2.5 text-xs text-indigo-400 hover:bg-indigo-500/10 transition-colors flex items-center gap-2 border-b border-[#222224] font-semibold cursor-pointer"
@@ -199,12 +221,6 @@ export default function MovieDetailPage() {
                     <span className="bg-[#1C1C1F] border border-[#2a2a2a] px-2 py-0.5 rounded font-medium">{movie.language}</span>
                     <span className="text-zinc-500">•</span>
                     <span>⏱ {movie.durationMins} mins</span>
-                    {movie.is3D && (
-                      <>
-                        <span className="text-zinc-500">•</span>
-                        <span className="text-[#E8B84B] font-semibold">3D AVAILABLE</span>
-                      </>
-                    )}
                   </div>
                   
                   <p className="text-xs text-zinc-400 max-w-3xl leading-relaxed mt-2 line-clamp-2 sm:line-clamp-none">
@@ -240,6 +256,18 @@ export default function MovieDetailPage() {
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
                   </svg>
                   <p className="text-xs text-zinc-500">Updating show schedules...</p>
+                </div>
+              ) : !hasShowsInCity ? (
+                <div className="text-center py-24 border border-dashed border-[#222224] rounded-2xl bg-[#111113]/30">
+                  <div className="text-zinc-500 text-3xl mb-3">📭</div>
+                  <h3 className="text-sm font-semibold text-zinc-300">No shows available</h3>
+                  <p className="text-xs text-zinc-500 max-w-xs mx-auto mt-1">There are no shows registered for this movie in {selectedCity} yet.</p>
+                  <p className="text-sm font-bold text-[#E8B84B] mt-4">this movie isnt available at your location yet</p>
+                  <Link to="/consumer/browse">
+                    <Button size="sm" variant="outline" className="mt-4 border-[#2a2a2a] text-zinc-300 hover:text-[#E8B84B]">
+                      ← Back to Movies
+                    </Button>
+                  </Link>
                 </div>
               ) : Object.keys(groupedShows).length === 0 ? (
                 <div className="text-center py-24 border border-dashed border-[#222224] rounded-2xl bg-[#111113]/30">

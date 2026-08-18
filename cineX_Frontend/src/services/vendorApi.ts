@@ -132,6 +132,7 @@ export interface Show {
   section?: Section
   screen?: Screen
   showDate: string
+  endDate?: string
   showTime: string
   basePrice: number
   status: 'UPCOMING' | 'LIVE' | 'COMPLETED' | 'CANCELLED'
@@ -146,6 +147,7 @@ export interface ShowRequest {
   sectionId?: number
   screenId?: number
   showDate: string
+  endDate?: string
   showTime: string
   basePrice: number
 }
@@ -246,6 +248,15 @@ export async function updateScreen(screenId: number, screen: ScreenRequest): Pro
 
 export async function deleteScreen(screenId: number): Promise<string> {
   const { data } = await api.delete<string>(`/screens/${screenId}`)
+  return data
+}
+
+export async function deleteShow(showId: number): Promise<void> {
+  await api.delete(`/shows/${showId}`)
+}
+
+export async function updateShowEndDate(showId: number, endDate: string): Promise<Show> {
+  const { data } = await api.put<Show>(`/shows/${showId}/end-date?endDate=${endDate}`)
   return data
 }
 

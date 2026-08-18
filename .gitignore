@@ -3,6 +3,11 @@ target/
 *.docx
 *.pdf
 *.xlsx
+*.log
+*.zip
+.vscode/
+.DS_Store
 
 */mvnw
 redis_prac
+GITBOT/

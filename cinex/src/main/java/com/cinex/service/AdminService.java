@@ -1,5 +1,6 @@
 package com.cinex.service;
 
+import com.cinex.entity.AuditAction;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,8 +38,9 @@ public class AdminService {
     private final ShowRepository showRepository;
     private final BookingRepository bookingRepository;
     private final MovieRepository movieRepository;
+    private final AuditService auditService;
 
-    public String setupAdmin(String email, String password) {
+    public Map<String, String> setupAdmin(String email, String password) {
         if (userRepository.findByEmail(email).isPresent()) {
             throw new RuntimeException("Admin already exists");
         }
@@ -55,7 +57,13 @@ public class AdminService {
 
         userRepository.save(admin);
 
-        return "Admin created. TOTP Secret: " + secret;
+        // Generate a scannable QR code for the authenticator app
+        String qrCodeDataUri = totpService.generateQrCodeDataUri(secret, email);
+
+        Map<String, String> response = new HashMap<>();
+        response.put("secret", secret);
+        response.put("qrCodeDataUri", qrCodeDataUri);
+        return response;
     }
 
     public String verifyTotp(String email, int code) {
@@ -80,18 +88,22 @@ public class AdminService {
                 .toList();
     }
 
-    public void suspendVendor(Long id) {
+    public void suspendVendor(Long id, String adminEmail) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Vendor not found"));
         user.setApproved(false);
         userRepository.save(user);
+        auditService.log(AuditAction.VENDOR_SUSPENDED, adminEmail, "VENDOR", user.getEmail(),
+                "Vendor " + user.getEmail() + " suspended by admin");
     }
 
-    public void reactivateVendor(Long id) {
+    public void reactivateVendor(Long id, String adminEmail) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Vendor not found"));
         user.setApproved(true);
         userRepository.save(user);
+        auditService.log(AuditAction.VENDOR_REACTIVATED, adminEmail, "VENDOR", user.getEmail(),
+                "Vendor " + user.getEmail() + " reactivated by admin");
     }
 
     @Transactional
@@ -99,19 +111,28 @@ public class AdminService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Vendor not found"));
 
+        String vendorEmail = user.getEmail();
+
         BannedVendor bannedVendor = new BannedVendor();
-        bannedVendor.setEmail(user.getEmail());
+        bannedVendor.setEmail(vendorEmail);
         bannedVendor.setReason(reason);
         bannedVendor.setBannedAt(LocalDateTime.now());
         bannedVendor.setBannedBy(adminEmail);
         bannedVendorRepository.save(bannedVendor);
 
         deleteVendorCascade(id);
+        auditService.log(AuditAction.VENDOR_BANNED, adminEmail, "VENDOR", vendorEmail,
+                "Vendor " + vendorEmail + " banned. Reason: " + reason);
     }
 
     @Transactional
-    public void deleteVendor(Long id) {
+    public void deleteVendor(Long id, String adminEmail) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Vendor not found"));
+        String vendorEmail = user.getEmail();
         deleteVendorCascade(id);
+        auditService.log(AuditAction.VENDOR_DELETED, adminEmail, "VENDOR", vendorEmail,
+                "Vendor " + vendorEmail + " permanently deleted");
     }
 
     private void deleteVendorCascade(Long vendorId) {

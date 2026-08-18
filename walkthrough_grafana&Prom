@@ -1,0 +1,69 @@
+# Production Observability Setup Walkthrough — Prometheus & Grafana
+
+The production-grade observability stack for **CineX** has been established locally with full configuration, data persistence, alert rules, notification routing, and automated dashboard provisioning.
+
+---
+
+## 🛠️ Summary of Changes
+
+### 1. Prometheus & Alerting Infrastructure (`/observability`)
+- **`observability/prometheus/prometheus.yml`**: Scrapes `/actuator/prometheus` at 10s intervals, connects to Alertmanager, and tags metrics with `environment=production`.
+- **`observability/prometheus/alert.rules.yml`**: Configured 5 production-grade alert rules:
+  1. **`CineXBackendDown`**: Fires if backend is down for 30s (`critical`).
+  2. **`HighErrorRate`**: Fires if 5xx error rate > 5% (`warning`).
+  3. **`SlowResponseTime`**: Fires if p95 response latency > 2s (`warning`).
+  4. **`HighJvmHeapUsage`**: Fires if JVM memory usage exceeds 85% (`warning`).
+  5. **`HikariPoolExhausted`**: Fires if DB connection pool utilization > 90% (`critical`).
+- **`observability/alertmanager/alertmanager.yml`**: Routing engine configured to dispatch emails for active alerts via SMTP.
+
+---
+
+### 2. Grafana Provisioning & Pre-Built Dashboards
+- **Datasource Auto-Provisioning (`observability/grafana/provisioning/datasources/prometheus.yml`)**: Automatically connects Grafana to Prometheus on container start without manual user intervention.
+- **Dashboard Provider (`observability/grafana/provisioning/dashboards/dashboards.yml`)**: Mounts auto-loaded dashboards under the `CineX` folder.
+- **Pre-Built Dashboards**:
+  - **`jvm-micrometer.json`**: Heap Memory Used vs Max, System & Process CPU %, Live/Daemon Threads, GC Pause Rates.
+  - **`http-overview.json`**: Request rates per endpoint (req/sec), 95th Percentile Response Time (latency), 4xx client vs 5xx server error metrics.
+  - **`cinex-business.json`**: Active HikariCP connection pool usage vs max, booking & payment API traffic trends.
+
+---
+
+### 3. Security & Container Parity
+- **Production Actuator Lockdown (`application-prod.properties`)**: Restricted exposed Actuator endpoints to strictly `health`, `prometheus`, `info`, and `metrics`. Added Kubernetes-style liveness/readiness health probes.
+- **Docker Compose Production Parity (`docker-compose.yml` & `docker-compose.prod.yml`)**: Added pinned Prometheus (`v2.53.0`), Alertmanager (`v0.27.0`), and Grafana (`11.1.0`) services with volume persistence (`prometheus-data`, `grafana-data`) and 30-day retention policies.
+
+---
+
+## 📋 File Architecture Overview
+
+```
+CineX/
+├── observability/
+│   ├── prometheus/
+│   │   ├── prometheus.yml          # Scrape config + Alertmanager link
+│   │   └── alert.rules.yml        # Production alert rules (down, latency, heap, errors)
+│   ├── alertmanager/
+│   │   └── alertmanager.yml       # Email/Alert notification routing
+│   └── grafana/
+│       ├── provisioning/
+│       │   ├── datasources/
+│       │   │   └── prometheus.yml # Auto-connects Grafana -> Prometheus
+│       │   └── dashboards/
+│       │       └── dashboards.yml # Auto-loads dashboard JSONs
+│       └── dashboards/
+│           ├── jvm-micrometer.json
+│           ├── http-overview.json
+│           └── cinex-business.json
+```
+
+---
+
+## 🎯 CV Impact & Resume Points
+
+You can now highlight the following on your resume/CV:
+
+> **"Designed and deployed production-grade observability infrastructure using Prometheus, Grafana, and Alertmanager"**
+> - Instrumented Spring Boot micro-monolith with Micrometer & Spring Actuator for real-time JVM heap, GC pause, and latency tracking.
+> - Configured 5 critical alert rules (backend downtime, 5xx error rate spikes, p95 latency thresholds, DB connection pool exhaustion) with automated Alertmanager email notifications.
+> - Automated Grafana dashboard provisioning (JVM health, HTTP p95 latency percentiles, HikariCP database pool metrics) with persistent storage and zero-touch configuration.
+> - Hardened production security by scoping Actuator endpoints and exposing dedicated `/actuator/health/liveness` & `/actuator/health/readiness` probes.

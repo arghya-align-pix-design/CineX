@@ -129,3 +129,22 @@ export async function toggleMovieActive(id: number): Promise<Movie> {
   const { data } = await api.put<Movie>(`/admin/movies/${id}/toggle-active`)
   return data
 }
+
+// Audit Logs
+export interface AuditLog {
+  id: number
+  action: string
+  actorEmail: string
+  targetType: string
+  targetId: string
+  details: string
+  timestamp: string
+}
+
+export async function fetchAuditLogs(action?: string, actor?: string): Promise<AuditLog[]> {
+  const params = new URLSearchParams()
+  if (action) params.append('action', action)
+  if (actor) params.append('actor', actor)
+  const { data } = await api.get<AuditLog[]>(`/admin/audit-log?${params.toString()}`)
+  return data
+}

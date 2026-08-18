@@ -77,10 +77,12 @@ export function useTheatreState() {
     saveHistory()
     setLayout(l => l.map((row, ri) => {
       const newLabel = ROW_LABEL(ri)
-      const seats = row.seats.map((seat, ci) => ({
-        ...seat,
-        code: `${newLabel}${ci + 1}`
-      }))
+      let activeCount = 0
+      const seats = row.seats.map(seat => {
+        if (seat.removed) return seat
+        activeCount++
+        return { ...seat, code: `${newLabel}${activeCount}` }
+      })
       return { ...row, rowLabel: newLabel, seats }
     }))
   }, [saveHistory])
@@ -101,10 +103,14 @@ export function useTheatreState() {
       const src = l[l.length - 1]
       const newGlobal = l.length
       const label = ROW_LABEL(newGlobal)
-      const seats = src.seats.map((s, ci) => ({
-        ...mkSeat(s.type, `${label}${ci + 1}`),
-        removed: s.removed
-      }))
+      let activeCount = 0
+      const seats = src.seats.map((s) => {
+        if (s.removed) {
+          return { ...mkSeat(s.type, ''), removed: true }
+        }
+        activeCount++
+        return mkSeat(s.type, `${label}${activeCount}`)
+      })
       const newRow = mkRow(label, src.zone, seats)
       return [...l, newRow]
     })
@@ -113,25 +119,51 @@ export function useTheatreState() {
   const removeRow = useCallback((id: number) => {
     saveHistory()
     setLayout(l => {
-      const row = l.find(i => i.id === id)
-      if (row) {
-        setSelected(prev => {
-          const next = new Set(prev)
-          row.seats.forEach(s => next.delete(s.id))
-          return next
+      const deleteIndex = l.findIndex(i => i.id === id)
+      if (deleteIndex === -1) return l
+
+      const filtered = l.filter(i => i.id !== id)
+
+      // Shift rowAisles
+      setRowAisles(prev => {
+        const next = new Set<number>()
+        prev.forEach(idx => {
+          if (idx < deleteIndex) {
+            next.add(idx)
+          } else if (idx > deleteIndex) {
+            next.add(idx - 1)
+          }
         })
-      }
-      return l.filter(i => i.id !== id)
+        return next
+      })
+
+      // Relabel remaining rows sequentially to avoid gaps
+      return filtered.map((row, ri) => {
+        const newLabel = ROW_LABEL(ri)
+        let activeCount = 0
+        const seats = row.seats.map(seat => {
+          if (seat.removed) return seat
+          activeCount++
+          return { ...seat, code: `${newLabel}${activeCount}` }
+        })
+        return { ...row, rowLabel: newLabel, seats }
+      })
     })
-  }, [saveHistory])
+  }, [saveHistory, setRowAisles])
 
   const addColumn = useCallback(() => {
     saveHistory()
     setLayout(l => l.map(row => {
-      const firstType = row.seats.find(s => !s.removed)?.type ?? activeType
-      const newCode = `${row.rowLabel}${row.seats.length + 1}`
       if (row.seats.length >= 25) return row // Guard: max 25 cols
-      return { ...row, seats: [...row.seats, mkSeat(firstType, newCode)] }
+      const firstType = row.seats.find(s => !s.removed)?.type ?? activeType
+      const newSeats = [...row.seats, mkSeat(firstType, '')]
+      let activeCount = 0
+      const seats = newSeats.map(s => {
+        if (s.removed) return s
+        activeCount++
+        return { ...s, code: `${row.rowLabel}${activeCount}` }
+      })
+      return { ...row, seats }
     }))
   }, [activeType, saveHistory])
 
@@ -141,17 +173,30 @@ export function useTheatreState() {
       if (row.seats.length === 0) return row
       const dropped = row.seats[row.seats.length - 1]
       setSelected(prev => { const n = new Set(prev); n.delete(dropped.id); return n })
-      return { ...row, seats: row.seats.slice(0, -1) }
+      const newSeats = row.seats.slice(0, -1)
+      let activeCount = 0
+      const seats = newSeats.map(s => {
+        if (s.removed) return s
+        activeCount++
+        return { ...s, code: `${row.rowLabel}${activeCount}` }
+      })
+      return { ...row, seats }
     }))
   }, [saveHistory])
 
   const removeSeat = useCallback((seatId: number) => {
     saveHistory()
     setSelected(prev => { const n = new Set(prev); n.delete(seatId); return n })
-    setLayout(l => l.map(row => ({
-      ...row,
-      seats: row.seats.map(s => s.id === seatId ? { ...s, removed: true } : s)
-    })))
+    setLayout(l => l.map(row => {
+      const updatedSeats = row.seats.map(s => s.id === seatId ? { ...s, removed: true } : s)
+      let activeCount = 0
+      const seats = updatedSeats.map(s => {
+        if (s.removed) return s
+        activeCount++
+        return { ...s, code: `${row.rowLabel}${activeCount}` }
+      })
+      return { ...row, seats }
+    }))
   }, [saveHistory])
 
   const toggleSelected = useCallback((seatId: number) => {
@@ -176,10 +221,16 @@ export function useTheatreState() {
 
   const deleteSelected = useCallback(() => {
     saveHistory()
-    setLayout(l => l.map(row => ({
-      ...row,
-      seats: row.seats.map(s => selected.has(s.id) ? { ...s, removed: true } : s)
-    })))
+    setLayout(l => l.map(row => {
+      const updatedSeats = row.seats.map(s => selected.has(s.id) ? { ...s, removed: true } : s)
+      let activeCount = 0
+      const seats = updatedSeats.map(s => {
+        if (s.removed) return s
+        activeCount++
+        return { ...s, code: `${row.rowLabel}${activeCount}` }
+      })
+      return { ...row, seats }
+    }))
     setSelected(new Set())
   }, [selected, saveHistory])
 

@@ -21,6 +21,7 @@ import com.cinex.repository.ScreenRepository;
 import com.cinex.repository.SectionRepository;
 import com.cinex.repository.ShowRepository;
 import com.cinex.repository.TheatreRepository;
+import com.cinex.entity.AuditAction;
 import com.cinex.entity.Booking;
 import com.cinex.repository.BookingRepository;
 
@@ -36,6 +37,7 @@ public class ShowService {
     private final SectionRepository sectionRepository;
     private final ScreenRepository screenRepository;
     private final BookingRepository bookingRepository;
+    private final AuditService auditService;
 
     public Show createShow(ShowRequest request, String vendorEmail) {
         Movie movie = movieRepository.findById(request.getMovieId())
@@ -78,7 +80,10 @@ public class ShowService {
             show.setTotalSeats(section.getRows() * section.getCols());
         }
 
-         return showRepository.save(show);
+         Show saved = showRepository.save(show);
+        auditService.log(AuditAction.SHOW_CREATED, vendorEmail, "SHOW", saved.getId().toString(),
+                "Show scheduled for movie '" + movie.getTitle() + "' at theatre '" + theatre.getName() + "'");
+        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -132,6 +137,8 @@ public class ShowService {
         show.setActive(false);
         show.setStatus(Show.ShowStatus.CANCELLED);
         showRepository.save(show);
+        auditService.log(AuditAction.SHOW_CANCELLED, vendorEmail, "SHOW", show.getId().toString(),
+                "Show for movie '" + show.getMovie().getTitle() + "' cancelled by vendor");
     }
 
     @Scheduled(fixedRate = 60000)

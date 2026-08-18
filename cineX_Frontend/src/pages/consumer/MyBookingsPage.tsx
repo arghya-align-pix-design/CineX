@@ -4,6 +4,7 @@ import { useAuth } from '../../existing/context/AuthContext'
 import { fetchMyBookings, type BookingResponse } from '../../services/consumerApi'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import DemoBanner from '../../components/DemoBanner'
 
 export default function MyBookingsPage() {
   const { user, logout } = useAuth()
@@ -103,6 +104,7 @@ export default function MyBookingsPage() {
 
   return (
     <div className="min-h-screen bg-[#0D0D0F] text-[#f5f0e8] font-sans">
+      <DemoBanner />
       {/* Navbar */}
       <nav className="border-b border-[#222224] bg-[#111113]/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">

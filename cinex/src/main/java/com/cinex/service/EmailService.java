@@ -79,4 +79,49 @@ public class EmailService {
             log.error("Failed to send vendor invitation email to {}. Exception details: {}", toEmail, e.getMessage());
         }
     }
+
+    @Async
+    public void sendPasswordResetLink(String toEmail, String resetLink) {
+        try {
+            MimeMessage mimeMessage = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+
+            helper.setFrom(senderName + " <" + mailFrom + ">");
+            helper.setTo(toEmail);
+            helper.setSubject("Reset Your CineX Password");
+
+            String htmlContent = "<div style=\"background-color: #09090B; padding: 40px 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #D4D4D8; text-align: center;\">" +
+                    "  <div style=\"max-width: 550px; margin: 0 auto; background-color: #121214; border: 1px solid #27272A; border-top: 4px solid #E8B84B; border-radius: 12px; padding: 40px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4); text-align: left;\">" +
+                    "    <div style=\"text-align: center; margin-bottom: 30px;\">" +
+                    "      <span style=\"font-size: 28px; font-weight: 800; letter-spacing: 2px; color: #E8B84B;\">CINEX</span>" +
+                    "      <div style=\"font-size: 11px; color: #71717A; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 5px;\">Password Security Services</div>" +
+                    "    </div>" +
+                    "    <h2 style=\"color: #FFFFFF; font-size: 20px; font-weight: 700; margin-top: 0; margin-bottom: 15px;\">Password Reset Request</h2>" +
+                    "    <p style=\"font-size: 14px; line-height: 1.6; color: #A1A1AA; margin-bottom: 25px;\">" +
+                    "      We received a request to reset your password for your CineX account (<strong>" + toEmail + "</strong>)." +
+                    "    </p>" +
+                    "    <div style=\"background-color: #18181B; border: 1px solid #27272A; border-radius: 8px; padding: 20px; margin-bottom: 30px; text-align: center;\">" +
+                    "      <div style=\"font-size: 12px; color: #E8B84B; font-weight: 600; margin-bottom: 15px;\">⏳ This link is active for 15 minutes and will expire immediately after use.</div>" +
+                    "      <a href=\"" + resetLink + "\" style=\"display: inline-block; background-color: #E8B84B; color: #09090B; font-weight: 700; text-decoration: none; padding: 14px 36px; border-radius: 8px; font-size: 14px;\">" +
+                    "        Reset Password Now" +
+                    "      </a>" +
+                    "    </div>" +
+                    "    <p style=\"font-size: 12px; color: #71717A; margin-bottom: 20px;\">" +
+                    "      If the button above does not work, copy and paste this link into your browser:<br/>" +
+                    "      <a href=\"" + resetLink + "\" style=\"color: #E8B84B; word-break: break-all;\">" + resetLink + "</a>" +
+                    "    </p>" +
+                    "    <hr style=\"border: 0; border-top: 1px solid #27272A; margin: 30px 0;\" />" +
+                    "    <div style=\"font-size: 11px; color: #52525B; text-align: center;\">" +
+                    "      If you did not request a password reset, please ignore this email. Your password will remain unchanged." +
+                    "    </div>" +
+                    "  </div>" +
+                    "</div>";
+
+            helper.setText(htmlContent, true);
+            mailSender.send(mimeMessage);
+            log.info("Password reset link successfully sent to: {}", toEmail);
+        } catch (Exception e) {
+            log.error("Failed to send password reset email to {}. Exception details: {}", toEmail, e.getMessage());
+        }
+    }
 }

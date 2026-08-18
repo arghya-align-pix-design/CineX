@@ -1,21 +1,47 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, createContext, useContext, type ReactNode, createElement } from 'react'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Comprehensive Indian city list — grouped by region for maintainability
 // ─────────────────────────────────────────────────────────────────────────────
 export const CITIES = [
-  // Metro cities
-  'Delhi NCR', 'Mumbai', 'Bengaluru', 'Kolkata', 'Hyderabad', 'Chennai', 'Pune',
-  // North India
-  'Jaipur', 'Lucknow', 'Chandigarh', 'Amritsar', 'Dehradun', 'Noida', 'Gurgaon',
-  'Agra', 'Varanasi', 'Kanpur', 'Patna', 'Ranchi',
-  // West India
-  'Ahmedabad', 'Surat', 'Vadodara', 'Nagpur', 'Indore', 'Bhopal', 'Goa',
-  // South India
-  'Kochi', 'Thiruvananthapuram', 'Coimbatore', 'Visakhapatnam', 'Vijayawada',
-  'Madurai', 'Mysuru', 'Mangaluru',
-  // East India
-  'Bhubaneswar', 'Guwahati', 'Siliguri',
+  'Agra',
+  'Ahmedabad',
+  'Amritsar',
+  'Bengaluru',
+  'Bhopal',
+  'Bhubaneswar',
+  'Chandigarh',
+  'Chennai',
+  'Coimbatore',
+  'Dehradun',
+  'Delhi NCR',
+  'Goa',
+  'Gurgaon',
+  'Guwahati',
+  'Hyderabad',
+  'Indore',
+  'Jaipur',
+  'Jharkhand',
+  'Kanpur',
+  'Kochi',
+  'Kolkata',
+  'Lucknow',
+  'Madurai',
+  'Mangaluru',
+  'Mumbai',
+  'Mysuru',
+  'Nagpur',
+  'Noida',
+  'Patna',
+  'Pune',
+  'Ranchi',
+  'Siliguri',
+  'Surat',
+  'Thiruvananthapuram',
+  'Vadodara',
+  'Varanasi',
+  'Vijayawada',
+  'Visakhapatnam'
 ]
 
 // Map of common Nominatim city name variants → our canonical CITIES entries
@@ -54,17 +80,13 @@ const CITY_ALIASES: Record<string, string> = {
   'panaji': 'Goa',
   'vasco da gama': 'Goa',
   'margao': 'Goa',
+  'jharkhand': 'Jharkhand',
+  'ranchi': 'Ranchi',
 }
 
 type LocationStatus = 'idle' | 'detecting' | 'detected' | 'denied' | 'error'
 
-interface UseCityReturn {
-  selectedCity: string
-  setSelectedCity: (city: string) => void
-  locationStatus: LocationStatus
-  detectedCity: string | null
-  requestGpsDetection: () => void
-}
+
 
 /**
  * Reverse-geocodes lat/lng into a city name using Nominatim (OpenStreetMap).
@@ -110,18 +132,46 @@ function matchToKnownCity(rawCity: string): string | null {
   return null
 }
 
-export function useCity(defaultCity: string = CITIES[0]): UseCityReturn {
-  const [selectedCity, setSelectedCity] = useState(defaultCity)
-  const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle')
-  const [detectedCity, setDetectedCity] = useState<string | null>(null)
+interface CityContextType {
+  selectedCity: string
+  setSelectedCity: (city: string) => void
+  locationStatus: LocationStatus
+  detectedCity: string | null
+  requestGpsDetection: (forceOverride?: boolean) => void
+}
 
-  const requestGpsDetection = useCallback(() => {
+const CityContext = createContext<CityContextType | null>(null)
+
+export function CityProvider({ children }: { children: ReactNode }) {
+  const [selectedCity, setSelectedCityState] = useState<string>(() => {
+    return localStorage.getItem('cinex_selected_city') || CITIES[0]
+  })
+  const [locationStatus, setLocationStatus] = useState<LocationStatus>(() => {
+    return (localStorage.getItem('cinex_location_status') as LocationStatus) || 'idle'
+  })
+  const [detectedCity, setDetectedCity] = useState<string | null>(() => {
+    return localStorage.getItem('cinex_detected_city') || null
+  })
+  const [hasManualSelection, setHasManualSelection] = useState<boolean>(() => {
+    return localStorage.getItem('cinex_has_manual_selection') === 'true'
+  })
+
+  const setSelectedCity = useCallback((city: string) => {
+    setSelectedCityState(city)
+    setHasManualSelection(true)
+    localStorage.setItem('cinex_selected_city', city)
+    localStorage.setItem('cinex_has_manual_selection', 'true')
+  }, [])
+
+  const requestGpsDetection = useCallback((forceOverride: boolean = false) => {
     if (!navigator.geolocation) {
       setLocationStatus('error')
+      localStorage.setItem('cinex_location_status', 'error')
       return
     }
 
     setLocationStatus('detecting')
+    localStorage.setItem('cinex_location_status', 'detecting')
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
@@ -132,38 +182,65 @@ export function useCity(defaultCity: string = CITIES[0]): UseCityReturn {
           const matched = matchToKnownCity(rawCity)
           if (matched) {
             setDetectedCity(matched)
-            setSelectedCity(matched)
+            localStorage.setItem('cinex_detected_city', matched)
             setLocationStatus('detected')
+            localStorage.setItem('cinex_location_status', 'detected')
+
+            if (forceOverride || !hasManualSelection) {
+              setSelectedCityState(matched)
+              localStorage.setItem('cinex_selected_city', matched)
+              if (forceOverride) {
+                setHasManualSelection(false)
+                localStorage.setItem('cinex_has_manual_selection', 'false')
+              }
+            }
           } else {
-            // GPS worked but city isn't in our list — still show what we found
             setDetectedCity(rawCity)
+            localStorage.setItem('cinex_detected_city', rawCity)
             setLocationStatus('detected')
+            localStorage.setItem('cinex_location_status', 'detected')
           }
         } else {
           setLocationStatus('error')
+          localStorage.setItem('cinex_location_status', 'error')
         }
       },
       (error) => {
         if (error.code === error.PERMISSION_DENIED) {
           setLocationStatus('denied')
+          localStorage.setItem('cinex_location_status', 'denied')
         } else {
           setLocationStatus('error')
+          localStorage.setItem('cinex_location_status', 'error')
         }
       },
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
     )
   }, [])
 
-  // Auto-detect on mount (asks browser permission once)
   useEffect(() => {
-    requestGpsDetection()
+    requestGpsDetection(false)
   }, [requestGpsDetection])
 
-  return {
-    selectedCity,
-    setSelectedCity,
-    locationStatus,
-    detectedCity,
-    requestGpsDetection,
+  return createElement(
+    CityContext.Provider,
+    {
+      value: {
+        selectedCity,
+        setSelectedCity,
+        locationStatus,
+        detectedCity,
+        requestGpsDetection,
+      }
+    },
+    children
+  )
+}
+
+export function useCity(): CityContextType {
+  const context = useContext(CityContext)
+  if (!context) {
+    throw new Error('useCity must be used within a CityProvider')
   }
+  return context
 }

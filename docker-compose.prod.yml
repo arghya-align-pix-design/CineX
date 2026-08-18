@@ -1,0 +1,133 @@
+services:
+  cinex-postgres:
+    image: postgres:15
+    container_name: cinex-postgres
+    environment:
+      POSTGRES_DB: cinexdb
+      POSTGRES_USER: cinex
+      POSTGRES_PASSWORD: cinexPr0dSecure2026
+    ports:
+      - "5434:5432"
+    volumes:
+      - cinex-pgdata:/var/lib/postgresql/data
+    networks:
+      - cinex-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinex -d cinexdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  cinex-redis:
+    image: redis:7-alpine
+    container_name: cinex-redis
+    ports:
+      - "6381:6379"
+    networks:
+      - cinex-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  cinex-backend:
+    build:
+      context: ./cinex
+      dockerfile: Dockerfile
+    container_name: cinex-backend
+    ports:
+      - "9090:9090"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://cinex-postgres:5432/cinexdb?TimeZone=UTC"
+      SPRING_DATASOURCE_USERNAME: cinex
+      SPRING_DATASOURCE_PASSWORD: cinexPr0dSecure2026
+      SPRING_REDIS_HOST: cinex-redis
+      SPRING_REDIS_PORT: "6379"
+      SPRING_MAIL_HOST: smtp.gmail.com
+      SPRING_MAIL_PORT: "587"
+      SPRING_MAIL_USERNAME: arghyadippaul09100@gmail.com
+      SPRING_MAIL_PASSWORD: hyhphkzspojzqfqo
+      CINEX_JWT_SECRET: cinex-super-secret-key-must-be-32-characters-long-prod
+      CINEX_APP_PORTAL_URL: http://162.222.204.31/login
+      SPRING_JPA_DDL_AUTO: update
+    depends_on:
+      cinex-postgres:
+        condition: service_healthy
+      cinex-redis:
+        condition: service_healthy
+    networks:
+      - cinex-net
+    restart: unless-stopped
+
+  cinex-frontend:
+    build:
+      context: ./cineX_Frontend
+      dockerfile: Dockerfile
+    container_name: cinex-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - cinex-backend
+    networks:
+      - cinex-net
+    restart: unless-stopped
+
+  cinex-prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: cinex-prometheus
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      - cinex-prometheus-data:/prometheus
+    ports:
+      - "9070:9090"
+    networks:
+      - cinex-net
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+
+  cinex-alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: cinex-alertmanager
+    volumes:
+      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+    networks:
+      - cinex-net
+    restart: unless-stopped
+
+  cinex-grafana:
+    image: grafana/grafana:11.1.0
+    container_name: cinex-grafana
+    ports:
+      - "3030:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - cinex-grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - cinex-net
+    depends_on:
+      - cinex-prometheus
+    restart: unless-stopped
+
+volumes:
+  cinex-pgdata:
+  cinex-prometheus-data:
+  cinex-grafana-data:
+
+networks:
+  cinex-net:
+    driver: bridge
+

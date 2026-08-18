@@ -16,12 +16,15 @@ export interface Movie {
 
 export interface ShowResponse {
   id: number
+  movieId: number
   movieTitle: string
   theatreName: string
   city: string
   sectionName: string
   seatType: string
+  screenName: string
   showDate: string
+  endDate: string | null
   showTime: string
   basePrice: number
   status: 'UPCOMING' | 'COMPLETED' | 'CANCELLED'
