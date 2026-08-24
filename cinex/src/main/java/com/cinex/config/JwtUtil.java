@@ -16,10 +16,11 @@ import io.jsonwebtoken.security.Keys;
 @Component
 public class JwtUtil {
 
-    @Value("${cinex.jwt.secret:cinex-super-secret-key-must-be-32-chars!!}")
+    @Value("${cinex.jwt.secret}")
     private String secret;
 
-    private static final long EXPIRATION = 1000 * 60 * 60 * 24;
+    private static final long STANDARD_EXPIRATION = 1000 * 60 * 15; // 15 minutes
+    private static final long DEMO_EXPIRATION = 1000 * 60 * 60 * 24;  // 24 hours for recruiter demo
 
     private SecretKey getKey() {
         return Keys.hmacShaKeyFor(secret.getBytes());
@@ -30,12 +31,13 @@ public class JwtUtil {
     }
 
     public String generateToken(String email, String role, boolean isDemo) {
+        long expirationTime = isDemo ? DEMO_EXPIRATION : STANDARD_EXPIRATION;
         return Jwts.builder()
                 .subject(email)
                 .claim("role", role)
                 .claim("demo", isDemo)
                 .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + EXPIRATION))
+                .expiration(new Date(System.currentTimeMillis() + expirationTime))
                 .signWith(getKey())
                 .compact();
     }
