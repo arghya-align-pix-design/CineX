@@ -27,14 +27,24 @@ public class JwtFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
+        String token = null;
         String header = request.getHeader("Authorization");
 
         if (header != null && header.startsWith("Bearer ")) {
-            String token = header.substring(7);
-            if (jwtUtil.isTokenValid(token)) {
-                String email = jwtUtil.extractEmail(token);
-                String role = jwtUtil.extractRole(token);
-                boolean isDemo = jwtUtil.extractIsDemo(token);
+            token = header.substring(7);
+        } else if (request.getCookies() != null) {
+            for (jakarta.servlet.http.Cookie cookie : request.getCookies()) {
+                if (CookieUtil.ACCESS_COOKIE_NAME.equals(cookie.getName())) {
+                    token = cookie.getValue();
+                    break;
+                }
+            }
+        }
+
+        if (token != null && jwtUtil.isTokenValid(token)) {
+            String email = jwtUtil.extractEmail(token);
+            String role = jwtUtil.extractRole(token);
+            boolean isDemo = jwtUtil.extractIsDemo(token);
 
                 List<SimpleGrantedAuthority> authorities;
                 if (isDemo) {
@@ -55,7 +65,6 @@ public class JwtFilter extends OncePerRequestFilter {
                     );
                 auth.setDetails(java.util.Map.of("demo", isDemo));
                 SecurityContextHolder.getContext().setAuthentication(auth);
-            }
         }
         filterChain.doFilter(request, response);
     }
