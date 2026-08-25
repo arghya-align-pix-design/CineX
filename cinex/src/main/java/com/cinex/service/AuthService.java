@@ -2,25 +2,34 @@ package com.cinex.service;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.cinex.config.JwtUtil;
 import com.cinex.dto.AuthResponse;
 import com.cinex.dto.RegisterRequest;
+import com.cinex.dto.TokenPair;
+import com.cinex.entity.OAuthExchangeCode;
+import com.cinex.entity.PasswordResetToken;
+import com.cinex.entity.RefreshToken;
 import com.cinex.entity.User;
-import com.cinex.repository.UserRepository;
 import com.cinex.repository.BannedVendorRepository;
+import com.cinex.repository.OAuthExchangeCodeRepository;
+import com.cinex.repository.PasswordResetTokenRepository;
+import com.cinex.repository.RefreshTokenRepository;
+import com.cinex.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 
-import com.cinex.entity.PasswordResetToken;
-import com.cinex.repository.PasswordResetTokenRepository;
-
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthService {
 
     private final UserRepository userRepository;
@@ -28,12 +37,15 @@ public class AuthService {
     private final JwtUtil jwtUtil;
     private final BannedVendorRepository bannedVendorRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final OAuthExchangeCodeRepository oAuthExchangeCodeRepository;
     private final EmailService emailService;
 
     @Value("${cinex.app.reset-url:https://arghyadip.store/reset-password}")
     private String resetBaseUrl;
 
-    public AuthResponse register(RegisterRequest request) {
+    @Transactional
+    public TokenPair register(RegisterRequest request) {
         if (bannedVendorRepository.existsByEmail(request.getEmail())) {
             throw new RuntimeException("This email has been permanently banned from the platform");
         }
@@ -45,17 +57,17 @@ public class AuthService {
         User user = new User();
         user.setEmail(request.getEmail());
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        user.setRole(User.Role.CONSUMER); // Default role, can be changed later by admin
+        user.setRole(User.Role.CONSUMER);
         user.setApproved(true);
         user.setFirstLogin(false);
 
         userRepository.save(user);
 
-        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
-        return new AuthResponse(token, user.getRole().name());
+        return createTokenPair(user, false, null);
     }
 
-    public AuthResponse login(String email, String password) {
+    @Transactional
+    public TokenPair login(String email, String password) {
         if (bannedVendorRepository.existsByEmail(email)) {
             throw new RuntimeException("This email has been permanently banned from the platform");
         }
@@ -74,15 +86,12 @@ public class AuthService {
         if (!user.isApproved()) {
             throw new RuntimeException("Account not approved yet");
         }
-        
-        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
-        
-        AuthResponse response = new AuthResponse(token, user.getRole().name());
-        response.setFirstLogin(user.isFirstLogin());
-        return response;
+
+        return createTokenPair(user, false, null);
     }
 
-    public AuthResponse demoLogin() {
+    @Transactional
+    public TokenPair demoLogin() {
         String demoEmail = "demo@cinex.com";
         User user = userRepository.findByEmail(demoEmail)
                 .orElseGet(() -> {
@@ -95,22 +104,42 @@ public class AuthService {
                     return userRepository.save(u);
                 });
 
-        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name(), true);
-        AuthResponse response = new AuthResponse(token, user.getRole().name(), true);
-        response.setFirstLogin(false);
-        return response;
+        return createTokenPair(user, true, null);
     }
 
-    public AuthResponse refreshToken(String token) {
-        if (token == null || token.isBlank()) {
+    @Transactional
+    public TokenPair createTokenPairForUser(User user, boolean isDemo) {
+        return createTokenPair(user, isDemo, null);
+    }
+
+    @Transactional
+    public TokenPair refreshToken(String refreshTokenStr) {
+        if (refreshTokenStr == null || refreshTokenStr.isBlank()) {
             throw new RuntimeException("Refresh token is required");
         }
 
-        if (!jwtUtil.isTokenValidOrExpired(token)) {
-            throw new RuntimeException("Invalid token");
+        Optional<RefreshToken> tokenOpt = refreshTokenRepository.findByToken(refreshTokenStr);
+
+        if (tokenOpt.isEmpty()) {
+            throw new RuntimeException("Invalid or expired refresh token");
         }
 
-        String email = jwtUtil.extractEmailFromAnyToken(token);
+        RefreshToken token = tokenOpt.get();
+
+        // Refresh Token Reuse Detection
+        if (token.isRevoked()) {
+            log.warn("SECURITY ALERT: Attempted reuse of revoked refresh token family: {}", token.getFamily());
+            refreshTokenRepository.revokeAllByFamily(token.getFamily());
+            throw new RuntimeException("Revoked refresh token presented. All sessions in family terminated.");
+        }
+
+        if (token.getExpiresAt().isBefore(Instant.now())) {
+            token.setRevoked(true);
+            refreshTokenRepository.save(token);
+            throw new RuntimeException("Expired refresh token");
+        }
+
+        String email = token.getUserEmail();
         if (bannedVendorRepository.existsByEmail(email)) {
             throw new RuntimeException("This email has been permanently banned from the platform");
         }
@@ -118,10 +147,66 @@ public class AuthService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        String refreshedToken = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
-        AuthResponse response = new AuthResponse(refreshedToken, user.getRole().name());
-        response.setFirstLogin(user.isFirstLogin());
-        return response;
+        // Revoke the current refresh token (single-use rotation)
+        token.setRevoked(true);
+        refreshTokenRepository.save(token);
+
+        // Continue the SAME token family
+        return createTokenPair(user, false, token.getFamily());
+    }
+
+    @Transactional
+    public void logout(String refreshTokenStr) {
+        if (refreshTokenStr != null && !refreshTokenStr.isBlank()) {
+            refreshTokenRepository.findByToken(refreshTokenStr).ifPresent(token -> {
+                refreshTokenRepository.revokeAllByFamily(token.getFamily());
+            });
+        }
+    }
+
+    @Transactional
+    public String createOAuthExchangeCode(User user) {
+        String code = UUID.randomUUID().toString();
+        Instant expiresAt = Instant.now().plusSeconds(60);
+        OAuthExchangeCode entity = new OAuthExchangeCode(code, user.getEmail(), expiresAt);
+        oAuthExchangeCodeRepository.save(entity);
+        return code;
+    }
+
+    @Transactional
+    public TokenPair exchangeOAuthCode(String code) {
+        if (code == null || code.isBlank()) {
+            throw new RuntimeException("Exchange code is required");
+        }
+
+        OAuthExchangeCode exchangeCode = oAuthExchangeCodeRepository.findByCodeAndUsedFalse(code)
+                .orElseThrow(() -> new RuntimeException("Invalid or expired OAuth exchange code"));
+
+        if (exchangeCode.getExpiresAt().isBefore(Instant.now())) {
+            throw new RuntimeException("OAuth exchange code expired");
+        }
+
+        exchangeCode.setUsed(true);
+        oAuthExchangeCodeRepository.save(exchangeCode);
+
+        User user = userRepository.findByEmail(exchangeCode.getUserEmail())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        return createTokenPair(user, false, null);
+    }
+
+    private TokenPair createTokenPair(User user, boolean isDemo, String existingFamily) {
+        String accessToken = jwtUtil.generateToken(user.getEmail(), user.getRole().name(), isDemo);
+        String refreshTokenStr = UUID.randomUUID().toString();
+        String family = (existingFamily != null) ? existingFamily : UUID.randomUUID().toString();
+
+        Instant now = Instant.now();
+        Instant refreshExpiresAt = isDemo ? now.plusSeconds(86400) : now.plusSeconds(86400 * 7); // 7 days
+
+        RefreshToken refreshToken = new RefreshToken(refreshTokenStr, user.getEmail(), now, refreshExpiresAt, family);
+        refreshTokenRepository.save(refreshToken);
+
+        return new TokenPair(accessToken, refreshTokenStr, user.getRole().name(), user.getEmail(), user.isFirstLogin(), isDemo);
     }
 
     public String forgotPassword(String email) {
