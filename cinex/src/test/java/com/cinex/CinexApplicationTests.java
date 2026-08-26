@@ -62,9 +62,9 @@ class CinexApplicationTests {
 		assertFalse(tempPassword.isEmpty());
 
 		// Attempt login
-		AuthResponse loginResponse = authService.login(email, tempPassword);
+		com.cinex.dto.TokenPair loginResponse = authService.login(email, tempPassword);
 		assertNotNull(loginResponse);
-		assertNotNull(loginResponse.getToken());
+		assertNotNull(loginResponse.getAccessToken());
 		assertEquals("VENDOR", loginResponse.getRole());
 		assertTrue(loginResponse.isFirstLogin());
 	}
