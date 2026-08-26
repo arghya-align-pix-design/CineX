@@ -74,12 +74,12 @@ export default function AdminLoginPage() {
     setLoading(true)
     try {
       // POST /admin/verify-totp to complete MFA handshake
-      const { data: rawJwt } = await api.post<string>('/admin/verify-totp', {
+      await api.post('/admin/verify-totp', {
         email: form.email,
         code: totpCode,
       })
 
-      login(rawJwt, { email: form.email, role: 'ADMIN' })
+      login({ email: form.email, role: 'ADMIN' })
       navigate('/admin/dashboard', { replace: true })
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } | string } }

@@ -6,10 +6,13 @@ import { useAuth } from '../context/AuthContext'
 // ProtectedRoute — requires any authenticated user
 // ---------------------------------------------------------------------------
 export function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { token } = useAuth()
+  const { user, demoMode } = useAuth()
   const location = useLocation()
 
-  if (!token) {
+  const isDemo = demoMode || localStorage.getItem('cinex_demo_mode') === 'true'
+  const isAuthenticated = user !== null || isDemo
+
+  if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
@@ -26,15 +29,18 @@ export function RoleRoute({
   role: string
   children: ReactNode
 }) {
-  const { token, user, demoMode } = useAuth()
+  const { user, demoMode } = useAuth()
   const location = useLocation()
 
-  if (!token) {
+  const isDemo = demoMode || localStorage.getItem('cinex_demo_mode') === 'true'
+  const isAuthenticated = user !== null || isDemo
+
+  if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
   // Allow recruiter demo users to view admin and vendor routes
-  if (demoMode) {
+  if (isDemo) {
     return <>{children}</>
   }
 

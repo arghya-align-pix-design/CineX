@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.cinex.config.JwtUtil;
 import com.cinex.dto.PlatformStatsResponse;
+import com.cinex.dto.TokenPair;
 import com.cinex.dto.VendorResponse;
 import com.cinex.entity.BannedVendor;
 import com.cinex.entity.User;
@@ -66,7 +67,9 @@ public class AdminService {
         return response;
     }
 
-    public String verifyTotp(String email, int code) {
+    private final AuthService authService;
+
+    public TokenPair verifyTotp(String email, int code) {
         User admin = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -79,7 +82,7 @@ public class AdminService {
             throw new RuntimeException("Invalid OTP code");
         }
 
-        return jwtUtil.generateToken(admin.getEmail(), admin.getRole().name());
+        return authService.createTokenPairForUser(admin, false);
     }
 
     public List<VendorResponse> listVendors() {

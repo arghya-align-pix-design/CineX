@@ -117,6 +117,27 @@ export default function AdminDashboardPage() {
     content: ''
   })
 
+  const formatDate = (val: any, formatType: 'date' | 'datetime' = 'date') => {
+    if (!val) return 'N/A'
+    try {
+      if (Array.isArray(val)) {
+        const [y, m, d, h = 0, min = 0] = val
+        if (formatType === 'datetime') {
+          return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')} ${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
+        }
+        return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      }
+      const dateObj = new Date(val)
+      if (isNaN(dateObj.getTime())) return String(val)
+      if (formatType === 'datetime') {
+        return dateObj.toLocaleString()
+      }
+      return dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    } catch {
+      return String(val)
+    }
+  }
+
   // Load All Data
   const loadData = async () => {
     setLoading(true)
@@ -155,7 +176,17 @@ export default function AdminDashboardPage() {
         bData = [
           { id: 1, email: 'scammer@cinex.com', reason: 'Billing fraud', bannedAt: new Date().toISOString(), bannedBy: 'admin@cinex.com' }
         ]
-        
+        aData = [
+          { id: 1, action: 'VENDOR_BANNED', actorEmail: 'admin@cinex.com', targetType: 'VENDOR', targetId: 'scammer@cinex.com', details: 'Vendor banned permanently. Reason: Billing fraud', timestamp: new Date().toISOString() },
+          { id: 2, action: 'MOVIE_CREATED', actorEmail: 'admin@cinex.com', targetType: 'MOVIE', targetId: 'Inception', details: 'Movie Inception created in catalog', timestamp: new Date(Date.now() - 3600000).toISOString() },
+          { id: 3, action: 'BOOKING_CONFIRMED', actorEmail: 'user@cinex.com', targetType: 'BOOKING', targetId: 'CX-8A91B2C3', details: 'Booking CX-8A91B2C3 confirmed for 2 seats', timestamp: new Date(Date.now() - 7200000).toISOString() },
+          { id: 4, action: 'BOOKING_AUTO_CANCELLED', actorEmail: 'SYSTEM', targetType: 'BOOKING', targetId: 'CX-9F8E7D6C', details: 'Expired booking CX-9F8E7D6C auto-cancelled by background scheduler', timestamp: new Date(Date.now() - 14400000).toISOString() }
+        ]
+      }
+
+      // Ensure messagesData is populated for demo mode or empty inbox
+      const isDemo = demoMode || localStorage.getItem('cinex_demo_mode') === 'true'
+      if (!messagesData || messagesData.length === 0 || isDemo) {
         const local = localStorage.getItem('cinex_local_messages')
         if (local) {
           messagesData = JSON.parse(local)
@@ -167,26 +198,39 @@ export default function AdminDashboardPage() {
               senderEmail: 'pvr@cinex.com',
               recipientId: 1,
               recipientEmail: 'admin@cinex.com',
-              content: 'Hello, our PVR IMAX screen layout is having trouble matching the base price multipliers. Can you assist?',
+              content: 'Hello Admin, we registered PVR IMAX Forum Mall in Bengaluru with 120 seats. Could you review our seating layout multipliers?',
               messageType: 'TEXT',
-              subject: 'Help with price multiplier',
+              subject: 'Help with seat multipliers',
               sentAt: new Date(Date.now() - 3600000 * 2).toISOString(),
               read: false
+            },
+            {
+              id: 2,
+              senderId: 1,
+              senderEmail: 'admin@cinex.com',
+              recipientId: 999,
+              recipientEmail: 'pvr@cinex.com',
+              content: 'CineX Monthly Business & Usage Report for August 2026.\n\nSummary:\n- Active Shows: 48\n- Total Tickets Booked: 620\n- Accumulated Gross Revenue: ₹186,000.00\n\nThank you for listing your screens with CineX!',
+              messageType: 'REPORT',
+              subject: 'CineX Monthly Business & Usage Report - August 2026',
+              reportPeriod: 'August 2026',
+              totalBookings: 620,
+              totalRevenue: 186000,
+              totalShows: 48,
+              sentAt: new Date(Date.now() - 3600000 * 24).toISOString(),
+              read: true
             }
           ]
           localStorage.setItem('cinex_local_messages', JSON.stringify(messagesData))
         }
-        unreads = messagesData.filter(m => !m.read && m.recipientEmail === 'admin@cinex.com').length
-
-        aData = [
-          { id: 1, action: 'VENDOR_BANNED', actorEmail: 'admin@cinex.com', targetType: 'VENDOR', targetId: 'scammer@cinex.com', details: 'Vendor banned permanently. Reason: Billing fraud', timestamp: new Date().toISOString() },
-          { id: 2, action: 'MOVIE_CREATED', actorEmail: 'admin@cinex.com', targetType: 'MOVIE', targetId: 'Inception', details: 'Movie Inception created in catalog', timestamp: new Date(Date.now() - 3600000).toISOString() },
-          { id: 3, action: 'BOOKING_CONFIRMED', actorEmail: 'user@cinex.com', targetType: 'BOOKING', targetId: 'CX-8A91B2C3', details: 'Booking CX-8A91B2C3 confirmed for 2 seats', timestamp: new Date(Date.now() - 7200000).toISOString() },
-          { id: 4, action: 'BOOKING_AUTO_CANCELLED', actorEmail: 'SYSTEM', targetType: 'BOOKING', targetId: 'CX-9F8E7D6C', details: 'Expired booking CX-9F8E7D6C auto-cancelled by background scheduler', timestamp: new Date(Date.now() - 14400000).toISOString() }
-        ]
       }
+
       setMessages(messagesData)
+      unreads = messagesData.filter(m => !m.read && m.recipientEmail === 'admin@cinex.com').length
       setUnreadCount(unreads)
+      if (messagesData.length > 0 && !activeMessageId) {
+        setActiveMessageId(messagesData[0].id)
+      }
       setAuditLogs(aData)
 
       // Load movies from localStorage (to allow offline local state testing)
@@ -736,6 +780,29 @@ export default function AdminDashboardPage() {
     const activeMsg = messages.find(m => m.id === activeMessageId)
     if (!activeMsg) return
 
+    const isDemo = demoMode || localStorage.getItem('cinex_demo_mode') === 'true'
+
+    if (isDemo) {
+      const newMsg: MessageResponse = {
+        id: Date.now(),
+        senderId: 1,
+        senderEmail: 'admin@cinex.com',
+        recipientId: activeMsg.senderId,
+        recipientEmail: activeMsg.senderEmail,
+        content: replyText,
+        messageType: 'TEXT',
+        subject: 'Reply',
+        sentAt: new Date().toISOString(),
+        read: true
+      }
+      const updated = [...messages, newMsg]
+      setMessages(updated)
+      localStorage.setItem('cinex_local_messages', JSON.stringify(updated))
+      setReplyText('')
+      setSuccess('🎬 Demo Notice: Message reply previewed in UI layout. Outgoing email transmission is restricted under Least Privilege.')
+      return
+    }
+
     try {
       try {
         await sendMessage({
@@ -781,6 +848,32 @@ export default function AdminDashboardPage() {
       return
     }
 
+    const isDemo = demoMode || localStorage.getItem('cinex_demo_mode') === 'true'
+
+    if (isDemo) {
+      const newMsg: MessageResponse = {
+        id: Date.now(),
+        senderId: 1,
+        senderEmail: 'admin@cinex.com',
+        recipientId: selectedVendor.id,
+        recipientEmail: selectedVendor.email,
+        content: composeForm.content,
+        messageType: 'TEXT',
+        subject: composeForm.subject || 'Direct Message',
+        sentAt: new Date().toISOString(),
+        read: true
+      }
+      const updated = [...messages, newMsg]
+      setMessages(updated)
+      setActiveMessageId(newMsg.id)
+      localStorage.setItem('cinex_local_messages', JSON.stringify(updated))
+      setIsComposeOpen(false)
+      setComposeForm({ subject: '', content: '' })
+      setComposeRecipientId('')
+      setSuccess('🎬 Demo Notice: Message previewed in UI layout. Outgoing email transmission is restricted under Least Privilege.')
+      return
+    }
+
     try {
       try {
         await sendMessage({
@@ -821,17 +914,46 @@ export default function AdminDashboardPage() {
   const handleBroadcastReports = async () => {
     if (!confirm('Are you sure you want to compile and broadcast monthly performance invoices to all active approved vendors?')) return
     setError('')
+
+    const isDemo = demoMode || localStorage.getItem('cinex_demo_mode') === 'true'
+
+    if (isDemo) {
+      const localList: MessageResponse[] = [...messages]
+      let startId = Date.now()
+      const approvedVendors = vendors.filter(v => v.approved)
+      approvedVendors.forEach(vendor => {
+        const reportMsg: MessageResponse = {
+          id: startId++,
+          senderId: 1,
+          senderEmail: 'admin@cinex.com',
+          recipientId: vendor.id,
+          recipientEmail: vendor.email,
+          content: `CineX Monthly Business & Usage Report for August 2026.\n\nSummary:\n- Active Shows: 48\n- Total Tickets Booked: 620\n- Accumulated Gross Revenue: ₹186,000.00\n\nThank you for listing your screens with CineX! Please review the figures above. Your monthly system licensing fee is calculated based on these parameters.`,
+          messageType: 'REPORT',
+          subject: 'CineX Monthly Business & Usage Report - August 2026',
+          reportPeriod: 'August 2026',
+          totalBookings: 620,
+          totalRevenue: 186000,
+          totalShows: 48,
+          sentAt: new Date().toISOString(),
+          read: false
+        }
+        localList.push(reportMsg)
+      })
+      setMessages(localList)
+      localStorage.setItem('cinex_local_messages', JSON.stringify(localList))
+      setSuccess('🎬 Demo Notice: Performance reports compiled in UI preview. Email broadcasting is restricted under Least Privilege.')
+      return
+    }
+
     try {
       try {
         await broadcastReports()
       } catch (apiErr) {
         console.warn('API Offline, broadcasting reports locally')
-        // Simulate broadcast reports by adding a report message to each approved vendor
         const localStr = localStorage.getItem('cinex_local_messages')
         const localList: MessageResponse[] = localStr ? JSON.parse(localStr) : []
-        
         let startId = localList.length > 0 ? Math.max(...localList.map(m => m.id)) + 1 : 1
-        
         const approvedVendors = vendors.filter(v => v.approved)
         approvedVendors.forEach(vendor => {
           const reportMsg: MessageResponse = {
@@ -840,19 +962,18 @@ export default function AdminDashboardPage() {
             senderEmail: 'admin@cinex.com',
             recipientId: vendor.id,
             recipientEmail: vendor.email,
-            content: `CineX Monthly Business & Usage Report for June 2026.\n\nSummary:\n- Active Shows: 3\n- Total Tickets Booked: 18\n- Accumulated Gross Revenue: $2700.00\n\nThank you for listing your screens with CineX! Please review the figures above. Your monthly system licensing fee is calculated based on these parameters.`,
+            content: `CineX Monthly Business & Usage Report for August 2026.\n\nSummary:\n- Active Shows: 48\n- Total Tickets Booked: 620\n- Accumulated Gross Revenue: ₹186,000.00\n\nThank you for listing your screens with CineX! Please review the figures above. Your monthly system licensing fee is calculated based on these parameters.`,
             messageType: 'REPORT',
-            subject: 'CineX Monthly Business & Usage Report - June 2026',
-            reportPeriod: 'June 2026',
-            totalBookings: 18,
-            totalRevenue: 2700,
-            totalShows: 3,
+            subject: 'CineX Monthly Business & Usage Report - August 2026',
+            reportPeriod: 'August 2026',
+            totalBookings: 620,
+            totalRevenue: 186000,
+            totalShows: 48,
             sentAt: new Date().toISOString(),
             read: false
           }
           localList.push(reportMsg)
         })
-        
         localStorage.setItem('cinex_local_messages', JSON.stringify(localList))
       }
       setSuccess('Monthly performance reports compiled and broadcasted to all active vendors successfully')
@@ -1527,7 +1648,7 @@ export default function AdminDashboardPage() {
                               {isOutgoing ? `To: ${msg.recipientEmail}` : `From: ${msg.senderEmail}`}
                             </span>
                             <span className="text-[10px] text-zinc-500 whitespace-nowrap">
-                              {new Date(msg.sentAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                              {formatDate(msg.sentAt, 'date')}
                             </span>
                           </div>
 
@@ -1566,7 +1687,7 @@ export default function AdminDashboardPage() {
                           <div>
                             <h3 className="font-bold text-zinc-100 text-base">{activeMsg.subject || 'Direct Message'}</h3>
                             <p className="text-xs text-zinc-500 mt-1">
-                              Sent: {new Date(activeMsg.sentAt).toLocaleString()}
+                              Sent: {formatDate(activeMsg.sentAt, 'datetime')}
                             </p>
                           </div>
                           <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${

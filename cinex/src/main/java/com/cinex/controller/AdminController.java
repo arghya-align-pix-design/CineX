@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 
 import com.cinex.dto.AdminSetupRequest;
+import com.cinex.dto.AuthResponse;
 import com.cinex.dto.BanRequest;
 import com.cinex.dto.LoginRequest;
 import com.cinex.dto.MovieRequest;
@@ -42,9 +43,15 @@ public class AdminController {
         return adminService.setupAdmin(request.getEmail(), request.getPassword());
     }
 
+    private final com.cinex.config.CookieUtil cookieUtil;
+
     @PostMapping("/verify-totp")
-    public String verifyTotp(@Valid @RequestBody TotpVerifyRequest request) {
-        return adminService.verifyTotp(request.getEmail(), request.getCode());
+    public AuthResponse verifyTotp(@Valid @RequestBody TotpVerifyRequest request,
+                                   jakarta.servlet.http.HttpServletResponse response) {
+        com.cinex.dto.TokenPair pair = adminService.verifyTotp(request.getEmail(), request.getCode());
+        response.addHeader(org.springframework.http.HttpHeaders.SET_COOKIE, cookieUtil.createAccessCookie(pair.getAccessToken(), false).toString());
+        response.addHeader(org.springframework.http.HttpHeaders.SET_COOKIE, cookieUtil.createRefreshCookie(pair.getRefreshToken()).toString());
+        return new AuthResponse(pair.getAccessToken(), pair.getRole());
     }
 
     @PostMapping("/login-step1")

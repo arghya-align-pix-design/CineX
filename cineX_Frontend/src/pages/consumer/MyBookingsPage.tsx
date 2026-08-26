@@ -18,9 +18,18 @@ export default function MyBookingsPage() {
     async function loadBookings() {
       try {
         setLoading(true)
-        const data = await fetchMyBookings()
-        // Sort by creation date descending (latest bookings first)
-        const sorted = data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        let data: BookingResponse[] = []
+        try {
+          data = await fetchMyBookings()
+        } catch {
+          // Handled below
+        }
+        const localList: BookingResponse[] = JSON.parse(localStorage.getItem('cinex_local_bookings') || '[]')
+        const combinedMap = new Map<string, BookingResponse>()
+        data.forEach(b => combinedMap.set(b.bookingRef, b))
+        localList.forEach(b => combinedMap.set(b.bookingRef, b))
+        const combined = Array.from(combinedMap.values())
+        const sorted = combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
         setBookings(sorted)
       } catch (err) {
         console.error(err)

@@ -37,7 +37,7 @@ export default function LoginPage() {
         email: form.email,
         password: form.password,
       })
-      login(data.token, { email: form.email, role: data.role })
+      login({ email: form.email, role: data.role })
 
       if (data.role === 'CONSUMER') navigate('/consumer/browse', { replace: true })
       else if (data.role === 'VENDOR') navigate('/vendor/dashboard', { replace: true })
@@ -91,11 +91,11 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const { data } = await api.post<LoginResponse & { demoMode?: boolean }>('/auth/demo-login')
-      login(data.token, { email: 'demo@cinex.com', role: data.role, demoMode: true })
+      login({ email: 'demo@cinex.com', role: data.role, demoMode: true })
       navigate('/demo', { replace: true })
     } catch (err: unknown) {
       // Fallback demo login for offline/local mode
-      login('demo-mock-jwt-token', { email: 'demo@cinex.com', role: 'CONSUMER', demoMode: true })
+      login({ email: 'demo@cinex.com', role: 'CONSUMER', demoMode: true })
       navigate('/demo', { replace: true })
     } finally {
       setLoading(false)

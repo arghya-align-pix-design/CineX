@@ -37,7 +37,7 @@ export default function VendorLoginPage() {
         password: form.password,
       })
 
-      login(data.token, { email: form.email, role: 'VENDOR' })
+      login({ email: form.email, role: 'VENDOR' })
 
       if (data.firstLogin) {
         navigate('/vendor/setup', { replace: true })

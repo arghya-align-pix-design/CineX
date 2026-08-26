@@ -6,11 +6,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
-interface AuthResponse {
-  token: string
-  role: 'CONSUMER'
-  firstLogin: boolean
-}
 
 export default function RegisterPage() {
   const { login } = useAuth()
@@ -31,11 +26,11 @@ export default function RegisterPage() {
     setError('')
     setLoading(true)
     try {
-      const { data } = await api.post<AuthResponse>('/auth/register', {
+      await api.post('/auth/register', {
         email: form.email.trim(),
         password: form.password,
       })
-      login(data.token, { email: form.email.trim(), role: 'CONSUMER' })
+      login({ email: form.email.trim(), role: 'CONSUMER' })
       navigate('/consumer/browse', { replace: true })
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } | string } }

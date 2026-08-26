@@ -2,6 +2,7 @@ package com.cinex.config;
 
 import com.cinex.entity.User;
 import com.cinex.repository.UserRepository;
+import com.cinex.service.AuthService;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -23,7 +24,7 @@ import java.util.Optional;
 @Slf4j
 public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
 
-    private final JwtUtil jwtUtil;
+    private final AuthService authService;
     private final UserRepository userRepository;
 
     @Value("${cinex.app.frontend-url:http://localhost:5173}")
@@ -46,13 +47,10 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
             Optional<User> userOpt = userRepository.findByEmail(email);
             if (userOpt.isPresent()) {
                 User user = userOpt.get();
-                String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
+                String code = authService.createOAuthExchangeCode(user);
 
                 String targetUrl = UriComponentsBuilder.fromUriString(frontendUrl + "/oauth/callback")
-                        .queryParam("token", token)
-                        .queryParam("email", user.getEmail())
-                        .queryParam("role", user.getRole().name())
-                        .queryParam("name", user.getName() != null ? user.getName() : "")
+                        .queryParam("code", code)
                         .build().toUriString();
 
                 getRedirectStrategy().sendRedirect(request, response, targetUrl);

@@ -11,6 +11,115 @@ import DemoBanner from '../../components/DemoBanner'
 const GENRES: Movie['genre'][] = ['ACTION', 'COMEDY', 'HORROR', 'DRAMA', 'THRILLER', 'ROMANCE', 'SCIFI', 'ANIMATION']
 const LANGUAGES: Movie['language'][] = ['HINDI', 'ENGLISH', 'TELUGU', 'TAMIL', 'KANNADA', 'MALAYALAM', 'BENGALI']
 
+const FALLBACK_MOVIES: Movie[] = [
+  {
+    id: 1,
+    title: 'Inception',
+    description: 'A thief who steals corporate secrets through dream-sharing technology is given the inverse task of planting an idea.',
+    genre: 'SCIFI',
+    language: 'ENGLISH',
+    durationMins: 148,
+    posterUrl: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=800',
+    is3D: true,
+    releaseDate: '2026-01-01',
+    endDate: '2026-12-31',
+    isActive: true
+  },
+  {
+    id: 2,
+    title: 'Dune: Part Two',
+    description: 'Paul Atreides unites with Chani and the Fremen while seeking revenge against the conspirators who destroyed his family.',
+    genre: 'ACTION',
+    language: 'ENGLISH',
+    durationMins: 166,
+    posterUrl: 'https://images.unsplash.com/photo-1478720568477-152d9b164e26?q=80&w=800',
+    is3D: true,
+    releaseDate: '2026-01-01',
+    endDate: '2026-12-31',
+    isActive: true
+  },
+  {
+    id: 3,
+    title: 'Kalki 2898 AD',
+    description: 'A modern avatar of Vishnu descends to Earth to protect humanity against dark forces in a dystopian future.',
+    genre: 'SCIFI',
+    language: 'HINDI',
+    durationMins: 180,
+    posterUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=800',
+    is3D: true,
+    releaseDate: '2026-01-01',
+    endDate: '2026-12-31',
+    isActive: true
+  },
+  {
+    id: 4,
+    title: 'The Dark Knight',
+    description: 'When the menace known as the Joker wreaks havoc on Gotham, Batman must accept one of the greatest tests.',
+    genre: 'ACTION',
+    language: 'ENGLISH',
+    durationMins: 152,
+    posterUrl: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=800',
+    is3D: false,
+    releaseDate: '2026-01-01',
+    endDate: '2026-12-31',
+    isActive: true
+  },
+  {
+    id: 5,
+    title: 'Interstellar',
+    description: 'A team of explorers travel through a wormhole in space in an attempt to ensure humanity survival.',
+    genre: 'DRAMA',
+    language: 'ENGLISH',
+    durationMins: 169,
+    posterUrl: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=800',
+    is3D: false,
+    releaseDate: '2026-01-01',
+    endDate: '2026-12-31',
+    isActive: true
+  }
+]
+
+const createFallbackShows = (city: string): ShowResponse[] => {
+  return FALLBACK_MOVIES.flatMap((m, idx) => [
+    {
+      id: 100 + idx,
+      movieId: m.id,
+      movieTitle: m.title,
+      theatreName: 'PVR IMAX Forum Mall',
+      city,
+      sectionName: 'PRIME',
+      seatType: 'RECLINER',
+      screenName: 'Audi 1',
+      showDate: '2026-08-25',
+      endDate: '2026-08-25',
+      showTime: '18:00',
+      basePrice: 350,
+      status: 'UPCOMING',
+      totalSeats: 120,
+      bookedSeats: 14,
+      availability: 'AVAILABLE'
+    },
+    {
+      id: 200 + idx,
+      movieId: m.id,
+      movieTitle: m.title,
+      theatreName: 'INOX Select Citywalk',
+      city,
+      sectionName: 'IMAX 3D',
+      seatType: 'EXECUTIVE',
+      screenName: 'Screen 2',
+      showDate: '2026-08-25',
+      endDate: '2026-08-25',
+      showTime: '20:30',
+      basePrice: 450,
+      status: 'UPCOMING',
+      totalSeats: 150,
+      bookedSeats: 45,
+      availability: 'FAST FILLING'
+    }
+  ])
+}
+
 export default function BrowseShowsPage() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -19,7 +128,6 @@ export default function BrowseShowsPage() {
   const [showsInCity, setShowsInCity] = useState<ShowResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [, setCityLoading] = useState(false)
-  const [error, setError] = useState('')
 
   // City detection (GPS + manual)
   const { selectedCity, setSelectedCity, locationStatus, detectedCity, requestGpsDetection } = useCity()
@@ -34,11 +142,14 @@ export default function BrowseShowsPage() {
     async function loadData() {
       try {
         setLoading(true)
-        const data = await fetchMovies()
+        let data = await fetchMovies()
+        if (!data || data.length === 0) {
+          data = FALLBACK_MOVIES
+        }
         setMovies(data)
       } catch (err) {
-        console.error(err)
-        setError('Failed to fetch movies. Please check your backend connection.')
+        console.warn('Backend offline, using fallback movie catalog for consumer browse')
+        setMovies(FALLBACK_MOVIES)
       } finally {
         setLoading(false)
       }
@@ -50,10 +161,14 @@ export default function BrowseShowsPage() {
     async function loadShows() {
       try {
         setCityLoading(true)
-        const data = await searchShows({ city: selectedCity })
+        let data = await searchShows({ city: selectedCity })
+        if (!data || data.length === 0) {
+          data = createFallbackShows(selectedCity)
+        }
         setShowsInCity(data)
       } catch (err) {
-        console.error('Failed to load shows in city:', err)
+        console.warn('Failed to load shows in city from backend, loading local fallback shows')
+        setShowsInCity(createFallbackShows(selectedCity))
       } finally {
         setCityLoading(false)
       }
@@ -173,12 +288,6 @@ export default function BrowseShowsPage() {
 
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
-        {error && (
-          <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-4 rounded-xl flex items-center justify-between">
-            <span>{error}</span>
-            <Button size="xs" variant="outline" onClick={() => window.location.reload()} className="h-7 text-xs border-red-500/30 hover:bg-red-500/10">Retry</Button>
-          </div>
-        )}
 
         {/* Loading Spinner */}
         {loading ? (

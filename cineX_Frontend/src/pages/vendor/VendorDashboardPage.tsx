@@ -114,6 +114,27 @@ export default function VendorDashboardPage() {
   })
 
 
+  const formatDate = (val: any, formatType: 'date' | 'datetime' = 'date') => {
+    if (!val) return 'N/A'
+    try {
+      if (Array.isArray(val)) {
+        const [y, m, d, h = 0, min = 0] = val
+        if (formatType === 'datetime') {
+          return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')} ${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
+        }
+        return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      }
+      const dateObj = new Date(val)
+      if (isNaN(dateObj.getTime())) return String(val)
+      if (formatType === 'datetime') {
+        return dateObj.toLocaleString()
+      }
+      return dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    } catch {
+      return String(val)
+    }
+  }
+
   // Initial Data Load
   const loadData = async () => {
     setLoading(true)
@@ -189,7 +210,6 @@ export default function VendorDashboardPage() {
         if (local) {
           showsData = JSON.parse(local)
         } else {
-          // Empty initial shows
           showsData = []
           localStorage.setItem('cinex_local_shows', JSON.stringify(showsData))
         }
@@ -206,10 +226,15 @@ export default function VendorDashboardPage() {
       }
 
       // Inbox
+      const isDemo = demoMode || localStorage.getItem('cinex_demo_mode') === 'true'
       try {
         messagesData = await fetchInbox()
         unreads = await fetchUnreadCount()
       } catch (err) {
+        // Handled below with fallback
+      }
+
+      if (!messagesData || messagesData.length === 0 || isDemo) {
         const local = localStorage.getItem('cinex_local_messages')
         if (local) {
           messagesData = JSON.parse(local)
@@ -233,13 +258,13 @@ export default function VendorDashboardPage() {
               senderEmail: 'admin@cinex.com',
               recipientId: 999,
               recipientEmail: user?.email || 'vendor@cinex.com',
-              content: 'CineX Monthly Business & Usage Report for June 2026.\n\nSummary:\n- Active Shows: 1\n- Total Tickets Booked: 12\n- Accumulated Gross Revenue: $1800.00\n\nThank you for listing your screens with CineX! Please review the figures above. Your monthly system licensing fee is calculated based on these parameters.',
+              content: 'CineX Monthly Business & Usage Report for August 2026.\n\nSummary:\n- Active Shows: 48\n- Total Tickets Booked: 620\n- Accumulated Gross Revenue: ₹186,000.00\n\nThank you for listing your screens with CineX! Please review the figures above.',
               messageType: 'REPORT',
-              subject: 'CineX Monthly Business & Usage Report - June 2026',
-              reportPeriod: 'June 2026',
-              totalBookings: 12,
-              totalRevenue: 1800,
-              totalShows: 1,
+              subject: 'CineX Monthly Business & Usage Report - August 2026',
+              reportPeriod: 'August 2026',
+              totalBookings: 620,
+              totalRevenue: 186000,
+              totalShows: 48,
               sentAt: new Date(Date.now() - 3600000 * 5).toISOString(),
               read: false
             }
@@ -255,6 +280,9 @@ export default function VendorDashboardPage() {
       setMovies(moviesData)
       setMessages(messagesData)
       setUnreadCount(unreads)
+      if (messagesData.length > 0 && !activeMessageId) {
+        setActiveMessageId(messagesData[0].id)
+      }
     } catch (err) {
       console.error(err)
       setError('Could not load vendor configuration.')
@@ -555,6 +583,30 @@ export default function VendorDashboardPage() {
     e.preventDefault()
     if (!replyText.trim()) return
     setError('')
+
+    const isDemo = demoMode || localStorage.getItem('cinex_demo_mode') === 'true'
+
+    if (isDemo) {
+      const newMsg: MessageResponse = {
+        id: Date.now(),
+        senderId: 999,
+        senderEmail: user?.email || 'vendor@cinex.com',
+        recipientId: 1,
+        recipientEmail: 'admin@cinex.com',
+        content: replyText,
+        messageType: 'TEXT',
+        subject: 'Reply',
+        sentAt: new Date().toISOString(),
+        read: true
+      }
+      const updated = [...messages, newMsg]
+      setMessages(updated)
+      localStorage.setItem('cinex_local_messages', JSON.stringify(updated))
+      setReplyText('')
+      setSuccess('🎬 Demo Notice: Message reply previewed in UI layout. Outgoing email transmission is restricted under Least Privilege.')
+      return
+    }
+
     try {
       try {
         await sendMessage({
@@ -592,6 +644,32 @@ export default function VendorDashboardPage() {
     e.preventDefault()
     if (!composeForm.content.trim()) return
     setError('')
+
+    const isDemo = demoMode || localStorage.getItem('cinex_demo_mode') === 'true'
+
+    if (isDemo) {
+      const newMsg: MessageResponse = {
+        id: Date.now(),
+        senderId: 999,
+        senderEmail: user?.email || 'vendor@cinex.com',
+        recipientId: 1,
+        recipientEmail: 'admin@cinex.com',
+        content: composeForm.content,
+        messageType: 'TEXT',
+        subject: 'Direct Message',
+        sentAt: new Date().toISOString(),
+        read: true
+      }
+      const updated = [...messages, newMsg]
+      setMessages(updated)
+      setActiveMessageId(newMsg.id)
+      localStorage.setItem('cinex_local_messages', JSON.stringify(updated))
+      setIsComposeOpen(false)
+      setComposeForm({ content: '' })
+      setSuccess('🎬 Demo Notice: Message previewed in UI layout. Outgoing email transmission is restricted under Least Privilege.')
+      return
+    }
+
     try {
       try {
         await sendMessage({
@@ -1322,7 +1400,7 @@ export default function VendorDashboardPage() {
                               {isOutgoing ? 'To: Administrator' : 'From: Administrator'}
                             </span>
                             <span className="text-[10px] text-zinc-500 whitespace-nowrap">
-                              {new Date(msg.sentAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                              {formatDate(msg.sentAt, 'date')}
                             </span>
                           </div>
 
@@ -1358,7 +1436,7 @@ export default function VendorDashboardPage() {
                       <div>
                         <h3 className="font-bold text-zinc-100 text-base">{activeMessage.subject || 'Direct Message'}</h3>
                         <p className="text-xs text-zinc-500 mt-1">
-                          Sent: {new Date(activeMessage.sentAt).toLocaleString()}
+                          Sent: {formatDate(activeMessage.sentAt, 'datetime')}
                         </p>
                       </div>
                       <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
